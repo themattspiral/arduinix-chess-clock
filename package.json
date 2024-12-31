@@ -1,0 +1,11 @@
+{
+  "name": "arduinix-chess-clock",
+  "version": "0.0.1",
+  "description": "Arduinix Chess Clock - Notification Bridge",
+  "main": "notification-bridge.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Matt Ritter",
+  "license": "MIT"
+}
