@@ -42,12 +42,12 @@ const bool TUBE_CATHODE_CTRL_0[TUBE_COUNT] = {false, true, false, true, false, t
 const int BLANK = 15;
 
 // behavior constants
-const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
+const int MUX_SINGLE_TUBE_DELAY_US = 1000;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
 const int DEMO_STEP_DURATION_MS = 150;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
-const int STATE_SEND_INTERVAL_MS = 1000;
+const int STATE_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_CHUNK_LENGTH = 1;
 
 enum clockState { IDLE, RUNNING, TIMEOUT, MENU, DEMO };
@@ -95,18 +95,20 @@ bool leftPlayersTurn = false;
 bool blinkOn = false;
 String statusQueue = "";
 
-const int TURN_TIMER_OPTIONS_COUNT = 11;
+const int TURN_TIMER_OPTIONS_COUNT = 13;
 const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
-  { { 7, 2, BLANK, BLANK, BLANK, BLANK }, 259201000UL, "72hr" },
-  { { 4, 8, BLANK, BLANK, BLANK, BLANK }, 172801000UL, "48hr" },
-  { { 2, 4, BLANK, BLANK, BLANK, BLANK }, 86401000UL, "24hr" },
-  { { 0, 1, BLANK, BLANK, BLANK, BLANK }, 3601000UL, "1hr" },
-  { { BLANK, BLANK, 3, 0, BLANK, BLANK }, 1800000UL, "30min" },
-  { { BLANK, BLANK, 1, 5, BLANK, BLANK }, 900000UL, "15min" },
-  { { BLANK, BLANK, 1, 0, BLANK, BLANK }, 600000UL, "10min" },
-  { { BLANK, BLANK, 0, 5, BLANK, BLANK }, 300000UL, "5min" },
-  { { BLANK, BLANK, 0, 3, BLANK, BLANK }, 180000UL, "3min" },
-  { { BLANK, BLANK, 0, 1, BLANK, BLANK }, 60000UL, "1min" },
+  { { 7, 2, BLANK, BLANK, BLANK, BLANK }, 259201000UL, "72h" },
+  { { 4, 8, BLANK, BLANK, BLANK, BLANK }, 172801000UL, "48h" },
+  { { 2, 4, BLANK, BLANK, BLANK, BLANK }, 86401000UL, "24h" },
+  { { 0, 2, BLANK, BLANK, BLANK, BLANK }, 7201000UL, "2h" },
+  { { 0, 1, BLANK, BLANK, BLANK, BLANK }, 3601000UL, "1h" },
+  { { BLANK, BLANK, 3, 0, BLANK, BLANK }, 1800000UL, "30m" },
+  { { BLANK, BLANK, 1, 5, BLANK, BLANK }, 900000UL, "15m" },
+  { { BLANK, BLANK, 1, 0, BLANK, BLANK }, 600000UL, "10m" },
+  { { BLANK, BLANK, 0, 5, BLANK, BLANK }, 300000UL, "5m" },
+  { { BLANK, BLANK, 0, 3, BLANK, BLANK }, 180000UL, "3m" },
+  { { BLANK, BLANK, 0, 1, BLANK, BLANK }, 60000UL, "1m" },
+  { { BLANK, BLANK, BLANK, BLANK, 1, 0 }, 10000UL, "10s" },     // for testing
   { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "elapsed" }
 };
 int currentTurnTimerOption = 2;
@@ -262,17 +264,22 @@ void multiplex() {
 
 void displayClockTime(unsigned long turnTimeMS) {
   unsigned long elapsedSec = turnTimeMS / 1000;
-
   int hours = elapsedSec / 3600;
-  int min = (elapsedSec % 3600) / 60;
-  int sec = (elapsedSec % 3600) % 60;
-  int fractionalSec = (turnTimeMS % 1000) / 10;
+  int hoursRemainder = elapsedSec % 3600;
+  int min = hoursRemainder / 60;
+  int sec = hoursRemainder % 60;
 
   if (hours > 0) {
     setMux(hours / 10, hours % 10, min / 10, min % 10, sec / 10, sec % 10);
   } else if (min > 0) {
-    setMux(min / 10, min % 10, sec / 10, sec % 10, fractionalSec / 10, fractionalSec % 10);
+    if (leftPlayersTurn) {
+      setMux(min / 10, min % 10, sec / 10, sec % 10, BLANK, BLANK);
+    } else {
+      setMux(BLANK, BLANK, min / 10, min % 10, sec / 10, sec % 10);
+    }
   } else {
+    int fractionalSec = (turnTimeMS % 1000) / 10;
+
     if (leftPlayersTurn) {
       setMux(sec / 10, sec % 10, fractionalSec / 10, fractionalSec % 10, BLANK, BLANK);
     } else {
@@ -368,7 +375,7 @@ void loopCountMultiplexed(unsigned long loopNow) {
 }
 
 void loopEnqueueStatus(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
-  if (loopNow - lastStateSendTimestampMs > STATE_SEND_INTERVAL_MS) {
+  if (loopNow - lastStateSendTimestampMs > STATE_UPDATE_INTERVAL_MS) {
     lastStateSendTimestampMs = loopNow;
     statusQueue += String(currentClockState) + "," + TURN_TIMER_OPTIONS[currentTurnTimerOption].label + "," + String(leftPlayersTurn) + "," + String(elapsedMs) + "," + String(remainingMs) + "\n";
   }
@@ -501,6 +508,7 @@ void loop() {
   if (currentClockState == RUNNING) {
     cv = loopCountdown(now);
   } else if (currentClockState == TIMEOUT) {
+    cv = { TURN_TIMER_OPTIONS[currentTurnTimerOption].turnLimitMS, 0UL };
     loopTimeout(now);
   } else if (currentClockState == MENU) {
     loopMenu(now);
