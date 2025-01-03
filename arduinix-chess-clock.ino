@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 /**
  * ============================
  *    Hardware & Data Definitions
@@ -42,20 +44,20 @@ const bool TUBE_CATHODE_CTRL_0[TUBE_COUNT] = {false, true, false, true, false, t
 const int BLANK = 15;
 
 // behavior constants
-const int MUX_SINGLE_TUBE_DELAY_US = 1000;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
+const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
 const int DEMO_STEP_DURATION_MS = 150;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
-const int STATE_UPDATE_INTERVAL_MS = 1000;
-const int STATUS_CHUNK_LENGTH = 1;
+const int STATUS_UPDATE_INTERVAL_MS = 1000;
+const int STATUS_UPDATE_MAX_SIZE = 30;
 
 enum clockState { IDLE, RUNNING, TIMEOUT, MENU, DEMO };
 
 typedef struct {
   int displayValues[TUBE_COUNT];
   unsigned long turnLimitMS;
-  String label;
+  char label[4];
 } TurnTimerOption;
 
 typedef struct {
@@ -88,12 +90,12 @@ unsigned long lastDisplayRefreshTimestampUs = 0UL;
 
 // chess clock state ♟⏲⏲♟
 clockState currentClockState = IDLE;
-unsigned long lastStateSendTimestampMs = 0UL;
+unsigned long lastStatusUpdateTimestampMs = 0UL;
 unsigned long lastEventStepTimestampMs = 0UL;
 unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
-String statusQueue = "";
+char statusUpdate[STATUS_UPDATE_MAX_SIZE] = "";
 
 const int TURN_TIMER_OPTIONS_COUNT = 13;
 const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
@@ -109,7 +111,7 @@ const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
   { { BLANK, BLANK, 0, 3, BLANK, BLANK }, 180000UL, "3m" },
   { { BLANK, BLANK, 0, 1, BLANK, BLANK }, 60000UL, "1m" },
   { { BLANK, BLANK, BLANK, BLANK, 1, 0 }, 10000UL, "10s" },     // for testing
-  { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "elapsed" }
+  { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "n0L" }
 };
 int currentTurnTimerOption = 2;
 
@@ -245,10 +247,7 @@ void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
 }
 
 void multiplex() {
-  unsigned long nowUs = micros();
-  unsigned long litForUs = nowUs - lastDisplayRefreshTimestampUs;
-
-  if (litForUs > MUX_SINGLE_TUBE_DELAY_US) {
+  if (micros() - lastDisplayRefreshTimestampUs > MUX_SINGLE_TUBE_DELAY_US) {
     // move onto next tube
     if (lastDisplayRefreshTubeIndex == TUBE_COUNT - 1) {
       lastDisplayRefreshTubeIndex = 0;
@@ -374,17 +373,11 @@ void loopCountMultiplexed(unsigned long loopNow) {
   }
 }
 
-void loopEnqueueStatus(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
-  if (loopNow - lastStateSendTimestampMs > STATE_UPDATE_INTERVAL_MS) {
-    lastStateSendTimestampMs = loopNow;
-    statusQueue += String(currentClockState) + "," + TURN_TIMER_OPTIONS[currentTurnTimerOption].label + "," + String(leftPlayersTurn) + "," + String(elapsedMs) + "," + String(remainingMs) + "\n";
-  }
-}
-
-void loopSendStatusChunk() {
-  if (statusQueue.length() > STATUS_CHUNK_LENGTH) {
-    Serial.print(statusQueue.substring(0, STATUS_CHUNK_LENGTH));
-    statusQueue = statusQueue.substring(STATUS_CHUNK_LENGTH);
+void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
+  if (loopNow - lastStatusUpdateTimestampMs > STATUS_UPDATE_INTERVAL_MS) {
+    snprintf(statusUpdate, STATUS_UPDATE_MAX_SIZE, "%d,%s,%d,%lu,%lu", currentClockState, TURN_TIMER_OPTIONS[currentTurnTimerOption].label, leftPlayersTurn, elapsedMs, remainingMs);
+    Serial.println(statusUpdate);
+    lastStatusUpdateTimestampMs = millis();
   }
 }
 
@@ -521,10 +514,5 @@ void loop() {
   // display current values
   multiplex();
 
-  // add new status update to queue to be sent on an interval
-  loopEnqueueStatus(now, cv.elapsedMS, cv.remainingMS);
-
-  // send a predictable chunk of queued status updates so that it continues to
-  // transmit data without introducing large enough delay to cause tube flicker
-  loopSendStatusChunk();
+  loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
 }
