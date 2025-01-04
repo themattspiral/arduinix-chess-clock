@@ -2,10 +2,14 @@ import { SerialPort } from 'serialport';
 import { autoDetect } from '@serialport/bindings-cpp';
 import { ReadlineParser } from '@serialport/parser-readline';
 
+const DT_FORMATTER = Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'long' });
+
 const ARDUINO_SERIAL_PORT = process.env.ARDUINO_SERIAL_PORT;
 const ARDUINO_SERIAL_PORT_SPEED = Number(process.env.ARDUINO_SERIAL_PORT_SPEED);
 const TOPIC_LEFT = process.env.TOPIC_LEFT;
 const TOPIC_RIGHT = process.env.TOPIC_RIGHT;
+const DRY_RUN = process.env.DRY_RUN ? process.env.DRY_RUN.toLowerCase() === 'true' : false;
+const DEBUG = process.env.DEBUG ? process.env.DEBUG.toLowerCase() === 'true' : false;
 
 const CLOCK_STATE = {
     '0': 'IDLE',
@@ -29,7 +33,15 @@ const TIMER_OPTION_LOW_TIME_THRESHOLD = {
 /*
  * Internal Functions
  */
-const notify = (topic, message) => fetch(`https://ntfy.sh/${topic}`, { method: 'POST', body: message });
+const notify = (topic, message) => {
+    if (DRY_RUN) {
+        log(`DRY RUN - NOT POSTing to ntfy.sh on [${topic}]:`, message);
+    } else {
+        fetch(`https://ntfy.sh/${topic}`, { method: 'POST', body: message });
+        log(`POSTing to ntfy.sh on [${topic}]:`, message);
+    }
+};
+
 const notifyBoth = message => {
     notify(TOPIC_LEFT, message);
     notify(TOPIC_RIGHT, message);
@@ -43,7 +55,7 @@ const notifyPlayerTurn = leftPlayerTurn => notify(topic(leftPlayerTurn), 'Your M
 const notifyPlayerTimeLow = (leftPlayerTurn, remainingLabel) => notify(topic(leftPlayerTurn), `Low on time! ${remainingLabel} Remaining!`);
 const notifyTimeout = leftPlayerTurn => notifyBoth(`Game Over! ${player(leftPlayerTurn)} Timed Out - ${player(!leftPlayerTurn)} Wins!`);
 
-const log = (message, ...rest) => console.log(`${new Date()}: ${message}`, ...rest);
+const log = (message, ...rest) => console.log(`${DT_FORMATTER.format(new Date())}: ${message}`, ...rest);
 
 const parseStatusUpdate = message => {
     const parts = message?.split(',');
@@ -88,14 +100,23 @@ const handleStatusChange = (last, current) => {
 const listPorts = async () => {
     const Binding = autoDetect();
     const ports = await Binding.list();
-    log(`Found ${ports.length} Serial Port${ports.length > 1 ? 's' : ''}:`, ports);
+
+    log(`Found ${ports.length} Serial Port${ports.length > 1 ? 's' : ''}:`, ports.map(port => 
+        `${port.path} | ${port.friendlyName} (${port.manufacturer}) at ${port.locationId}`
+    ));
 };
 
 /*
  * Main Run
  */
+console.log(`Arduinix Chess Clock Notification Bridge ${process.env.npm_package_version}
+Port: ${ARDUINO_SERIAL_PORT}
+Speed: ${ARDUINO_SERIAL_PORT_SPEED}
+Left Player Topic: ${TOPIC_LEFT}
+Right Player Topic: ${TOPIC_RIGHT}
+Dry Run: ${DRY_RUN}
+`);
 
-// open serial communication with Arduino
 const port = new SerialPort({ path: ARDUINO_SERIAL_PORT, baudRate: ARDUINO_SERIAL_PORT_SPEED });
 const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
 
@@ -113,6 +134,9 @@ port.on('open', () => {
 });
 
 parser.on('data', data =>{
+    if (DEBUG) {
+        log('DEBUG:', data);
+    }
     let status = parseStatusUpdate(data);
 
     if (status) {
