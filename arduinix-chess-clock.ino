@@ -1,49 +1,13 @@
 #include <stdio.h>
 
-/**
+#include "clock-hardware.h"
+#include "clock-data-types.h"
+
+/*
  * ============================
- *    Hardware & Data Definitions
+ *    Behavior Constants
  * ============================
  */
-
-// ArduiNIX controller 0 (SN74141/K155ID1)
-const int PIN_CATHODE_0_A = 2;                
-const int PIN_CATHODE_0_B = 3;
-const int PIN_CATHODE_0_C = 4;
-const int PIN_CATHODE_0_D = 5;
-
-// ArduiNIX controller 1 (SN74141/K155ID1)
-const int PIN_CATHODE_1_A = 6;                
-const int PIN_CATHODE_1_B = 7;
-const int PIN_CATHODE_1_C = 8;
-const int PIN_CATHODE_1_D = 9;
-
-// ArduiNIX anode pins
-const int PIN_ANODE_1 = 10;
-const int PIN_ANODE_2 = 11;
-const int PIN_ANODE_3 = 12;
-const int PIN_ANODE_4 = 13;
-
-// button pins
-const int PIN_BUTTON_RIGHT = A0;
-const int PIN_BUTTON_LEFT = A1;
-const int PIN_BUTTON_RIGHT_LED = A2;
-const int PIN_BUTTON_LEFT_LED = A3;
-const int PIN_BUTTON_UTILITY = A4;
-const int PIN_BUTTON_GROUND = A5;
-
-// 6 tubes, each wired to a unique combination of anode pin and cathode controller
-// TODO: IMPROVE THIS (no true/false)
-const int TUBE_COUNT = 6;
-const int TUBE_ANODES[TUBE_COUNT] = {1, 1, 2, 2, 3, 3};
-const bool TUBE_CATHODE_CTRL_0[TUBE_COUNT] = {false, true, false, true, false, true};
-
-// SN74141/K155ID1 controllers are BCD-to-decimal, and are wired such that
-// giving them 0-9 in BCD will represent themselves as Nixie tube decimals, 
-// and anything else is unconnected (therefore blank)
-const int BLANK = 15;
-
-// behavior constants
 const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
 const int DEMO_STEP_DURATION_MS = 150;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
@@ -52,21 +16,7 @@ const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_SIZE = 30;
 
-enum clockState { IDLE, RUNNING, TIMEOUT, MENU, DEMO };
-
-typedef struct {
-  int displayValues[TUBE_COUNT];
-  unsigned long turnLimitMS;
-  char label[4];
-} TurnTimerOption;
-
-typedef struct {
-  unsigned long elapsedMS;
-  unsigned long remainingMS;
-} CountdownValues;
-
-
-/**
+/*
  * ============================
  *    Runtime State
  * ============================
@@ -89,34 +39,16 @@ int lastDisplayRefreshTubeIndex = -1;
 unsigned long lastDisplayRefreshTimestampUs = 0UL;
 
 // chess clock state ♟⏲⏲♟
-clockState currentClockState = IDLE;
+ClockState currentClockState = IDLE;
 unsigned long lastStatusUpdateTimestampMs = 0UL;
 unsigned long lastEventStepTimestampMs = 0UL;
 unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
 char statusUpdate[STATUS_UPDATE_MAX_SIZE] = "";
-
-const int TURN_TIMER_OPTIONS_COUNT = 13;
-const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
-  { { 7, 2, BLANK, BLANK, BLANK, BLANK }, 259201000UL, "72h" },
-  { { 4, 8, BLANK, BLANK, BLANK, BLANK }, 172801000UL, "48h" },
-  { { 2, 4, BLANK, BLANK, BLANK, BLANK }, 86401000UL, "24h" },
-  { { 0, 2, BLANK, BLANK, BLANK, BLANK }, 7201000UL, "2h" },
-  { { 0, 1, BLANK, BLANK, BLANK, BLANK }, 3601000UL, "1h" },
-  { { BLANK, BLANK, 3, 0, BLANK, BLANK }, 1800000UL, "30m" },
-  { { BLANK, BLANK, 1, 5, BLANK, BLANK }, 900000UL, "15m" },
-  { { BLANK, BLANK, 1, 0, BLANK, BLANK }, 600000UL, "10m" },
-  { { BLANK, BLANK, 0, 5, BLANK, BLANK }, 300000UL, "5m" },
-  { { BLANK, BLANK, 0, 3, BLANK, BLANK }, 180000UL, "3m" },
-  { { BLANK, BLANK, 0, 1, BLANK, BLANK }, 60000UL, "1m" },
-  { { BLANK, BLANK, BLANK, BLANK, 1, 0 }, 10000UL, "10s" },     // for testing
-  { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "n0L" }
-};
 int currentTurnTimerOption = 2;
 
-
-/**
+/*
  * ============================
  *    INITIAL SETUP (ON BOOT)
  * ============================
@@ -165,7 +97,7 @@ void setup()
 }
 
 
-/**
+/*
  * ============================
  *    Internal Functions
  * ============================
@@ -261,7 +193,7 @@ void multiplex() {
   }
 }
 
-void displayClockTime(unsigned long turnTimeMS) {
+void setMuxClockTime(unsigned long turnTimeMS) {
   unsigned long elapsedSec = turnTimeMS / 1000;
   int hours = elapsedSec / 3600;
   int hoursRemainder = elapsedSec % 3600;
@@ -295,15 +227,15 @@ CountdownValues loopCountdown(unsigned long loopNow) {
   setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
 
   if (timeoutLimit == 0UL) {
-    // when limit is special value 0, show elapsed time rather than remaining time
-    displayClockTime(elapsedMS);
+    // when limit is special value 0, show elapsed time and never timeout
+    setMuxClockTime(elapsedMS);
   } else if (elapsedMS >= timeoutLimit) {
     // countdown expired, change state
     remainingMS = 0UL;
     currentClockState = TIMEOUT;
   } else {
-    // countdown running, show remaining time
-    displayClockTime(remainingMS);
+    // countdown is running - show remaining time
+    setMuxClockTime(remainingMS);
   }
 
   return { elapsedMS, remainingMS };
@@ -316,13 +248,13 @@ void loopTimeout(unsigned long loopNow) {
   }
 
   if (blinkOn) {
+    setButtonLEDs(true, true);
+
     if (leftPlayersTurn) {
-      // left player timed out and lost
-      setButtonLEDs(true, true);
+      // left player timed out
       setMux(0, 0, 0, 0, BLANK, BLANK);
     } else {
-      // right player timed out and lost
-      setButtonLEDs(true, true);
+      // right player timed out
       setMux( BLANK, BLANK, 0, 0, 0, 0);
     }
   } else {
@@ -332,7 +264,7 @@ void loopTimeout(unsigned long loopNow) {
 }
 
 void loopMenu(unsigned long loopNow) {
-    if (loopNow - lastEventStepTimestampMs > MENU_BLINK_DURATION_MS) {
+  if (loopNow - lastEventStepTimestampMs > MENU_BLINK_DURATION_MS) {
     lastEventStepTimestampMs = loopNow;
     blinkOn = !blinkOn;
   }
@@ -358,8 +290,7 @@ void loopIdle() {
   setMux(BLANK, BLANK, BLANK, BLANK, BLANK, BLANK);
 }
 
-// multiplex couting up different values on each tube
-void loopCountMultiplexed(unsigned long loopNow) {
+void loopDemoCount(unsigned long loopNow) {
   if (loopNow - lastEventStepTimestampMs > DEMO_STEP_DURATION_MS) {
     lastEventStepTimestampMs = loopNow;
 
@@ -484,7 +415,7 @@ void loopCheckButtons(unsigned long loopNow) {
 }
 
 
-/**
+/*
  * ============================
  *    MAIN LOOP (CONTINUOUS)
  * ============================
@@ -506,7 +437,7 @@ void loop() {
   } else if (currentClockState == MENU) {
     loopMenu(now);
   } else if (currentClockState == DEMO) {
-    loopCountMultiplexed(now);
+    loopDemoCount(now);
   } else if (currentClockState == IDLE) {
     loopIdle();
   }
