@@ -109,12 +109,12 @@ const listPorts = async () => {
 /*
  * Main Run
  */
-console.log(`Arduinix Chess Clock Notification Bridge ${process.env.npm_package_version}
-Port: ${ARDUINO_SERIAL_PORT}
-Speed: ${ARDUINO_SERIAL_PORT_SPEED}
-Left Player Topic: ${TOPIC_LEFT}
-Right Player Topic: ${TOPIC_RIGHT}
-Dry Run: ${DRY_RUN}
+console.log(`Arduinix Chess Clock ${process.env.npm_package_version} - Notification Bridge
+  Serial Port: ${ARDUINO_SERIAL_PORT}
+  Serial Port Speed: ${ARDUINO_SERIAL_PORT_SPEED}
+  Left Player NTFY Topic: ${TOPIC_LEFT}
+  Right Player NTFY Topic: ${TOPIC_RIGHT}
+  Dry Run: ${DRY_RUN}
 `);
 
 const port = new SerialPort({ path: ARDUINO_SERIAL_PORT, baudRate: ARDUINO_SERIAL_PORT_SPEED });

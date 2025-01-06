@@ -8,13 +8,13 @@
 #define _CLOCK_HARDWARE_H
 
 // ArduiNIX controller 0 (SN74141/K155ID1)
-const int PIN_CATHODE_0_A = 2;                
+const int PIN_CATHODE_0_A = 2;
 const int PIN_CATHODE_0_B = 3;
 const int PIN_CATHODE_0_C = 4;
 const int PIN_CATHODE_0_D = 5;
 
 // ArduiNIX controller 1 (SN74141/K155ID1)
-const int PIN_CATHODE_1_A = 6;                
+const int PIN_CATHODE_1_A = 6;
 const int PIN_CATHODE_1_B = 7;
 const int PIN_CATHODE_1_C = 8;
 const int PIN_CATHODE_1_D = 9;

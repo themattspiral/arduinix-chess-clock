@@ -8,13 +8,14 @@
  *    Behavior Constants
  * ============================
  */
+const long SERIAL_SPEED = 115200L;
 const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
 const int DEMO_STEP_DURATION_MS = 150;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
-const int STATUS_UPDATE_MAX_SIZE = 30;
+const int STATUS_UPDATE_MAX_CHARS = 30;
 
 /*
  * ============================
@@ -36,16 +37,16 @@ unsigned long utilityButtonLastDebounceMS = 0UL;
 // nixie tube state 🚥🚥
 int mux[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
 int lastDisplayRefreshTubeIndex = -1;
-unsigned long lastDisplayRefreshTimestampUs = 0UL;
+unsigned long lastDisplayRefreshTimestampUS = 0UL;
 
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = IDLE;
-unsigned long lastStatusUpdateTimestampMs = 0UL;
-unsigned long lastEventStepTimestampMs = 0UL;
+unsigned long lastStatusUpdateTimestampMS = 0UL;
+unsigned long lastEventStepTimestampMS = 0UL;
 unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
-char statusUpdate[STATUS_UPDATE_MAX_SIZE] = "";
+char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 int currentTurnTimerOption = 2;
 
 /*
@@ -55,7 +56,7 @@ int currentTurnTimerOption = 2;
  */
 void setup() 
 {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_SPEED);
 
   pinMode(PIN_ANODE_1, OUTPUT);
   pinMode(PIN_ANODE_2, OUTPUT);
@@ -178,8 +179,8 @@ void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
   mux[5] = t5;
 }
 
-void multiplex() {
-  if (micros() - lastDisplayRefreshTimestampUs > MUX_SINGLE_TUBE_DELAY_US) {
+void loopMultiplex() {
+  if (micros() - lastDisplayRefreshTimestampUS > MUX_SINGLE_TUBE_DELAY_US) {
     // move onto next tube
     if (lastDisplayRefreshTubeIndex == TUBE_COUNT - 1) {
       lastDisplayRefreshTubeIndex = 0;
@@ -189,7 +190,7 @@ void multiplex() {
 
     displayOnTube(lastDisplayRefreshTubeIndex, mux[lastDisplayRefreshTubeIndex]);
 
-    lastDisplayRefreshTimestampUs = micros();
+    lastDisplayRefreshTimestampUS = micros();
   }
 }
 
@@ -242,8 +243,8 @@ CountdownValues loopCountdown(unsigned long loopNow) {
 }
 
 void loopTimeout(unsigned long loopNow) {
-  if (loopNow - lastEventStepTimestampMs > TIMEOUT_BLINK_DURATION_MS) {
-    lastEventStepTimestampMs = loopNow;
+  if (loopNow - lastEventStepTimestampMS > TIMEOUT_BLINK_DURATION_MS) {
+    lastEventStepTimestampMS = loopNow;
     blinkOn = !blinkOn;
   }
 
@@ -264,8 +265,8 @@ void loopTimeout(unsigned long loopNow) {
 }
 
 void loopMenu(unsigned long loopNow) {
-  if (loopNow - lastEventStepTimestampMs > MENU_BLINK_DURATION_MS) {
-    lastEventStepTimestampMs = loopNow;
+  if (loopNow - lastEventStepTimestampMS > MENU_BLINK_DURATION_MS) {
+    lastEventStepTimestampMS = loopNow;
     blinkOn = !blinkOn;
   }
 
@@ -291,8 +292,8 @@ void loopIdle() {
 }
 
 void loopDemoCount(unsigned long loopNow) {
-  if (loopNow - lastEventStepTimestampMs > DEMO_STEP_DURATION_MS) {
-    lastEventStepTimestampMs = loopNow;
+  if (loopNow - lastEventStepTimestampMS > DEMO_STEP_DURATION_MS) {
+    lastEventStepTimestampMS = loopNow;
 
     for (int i = 0; i < TUBE_COUNT; i++) {
       if (mux[i] == 9) {
@@ -305,10 +306,16 @@ void loopDemoCount(unsigned long loopNow) {
 }
 
 void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
-  if (loopNow - lastStatusUpdateTimestampMs > STATUS_UPDATE_INTERVAL_MS) {
-    snprintf(statusUpdate, STATUS_UPDATE_MAX_SIZE, "%d,%s,%d,%lu,%lu", currentClockState, TURN_TIMER_OPTIONS[currentTurnTimerOption].label, leftPlayersTurn, elapsedMs, remainingMs);
+  if (loopNow - lastStatusUpdateTimestampMS > STATUS_UPDATE_INTERVAL_MS) {
+    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu", 
+      currentClockState,
+      TURN_TIMER_OPTIONS[currentTurnTimerOption].label,
+      leftPlayersTurn,
+      elapsedMs,
+      remainingMs
+    );
     Serial.println(statusUpdate);
-    lastStatusUpdateTimestampMs = millis();
+    lastStatusUpdateTimestampMS = millis();
   }
 }
 
@@ -443,7 +450,7 @@ void loop() {
   }
 
   // display current values
-  multiplex();
+  loopMultiplex();
 
   loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
 }
