@@ -36,7 +36,7 @@ unsigned long utilityButtonLastDebounceMS = 0UL;
 
 // nixie tube state 🚥🚥
 int mux[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
-int lastDisplayRefreshTubeIndex = -1;
+int lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
 
 // chess clock state ♟⏲⏲♟
@@ -182,10 +182,10 @@ void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
 void loopMultiplex() {
   if (micros() - lastDisplayRefreshTimestampUS > MUX_SINGLE_TUBE_DELAY_US) {
     // move onto next tube
-    if (lastDisplayRefreshTubeIndex == TUBE_COUNT - 1) {
-      lastDisplayRefreshTubeIndex = 0;
+    if (lastDisplayRefreshTubeIndex == 0) {
+      lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
-      lastDisplayRefreshTubeIndex++;
+      lastDisplayRefreshTubeIndex--;
     }
 
     displayOnTube(lastDisplayRefreshTubeIndex, mux[lastDisplayRefreshTubeIndex]);
