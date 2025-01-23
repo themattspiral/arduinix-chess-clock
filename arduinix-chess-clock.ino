@@ -57,13 +57,11 @@ int currentTurnTimerOption = 2;
 
 /*
  * ============================
- *    INITIAL SETUP (ON BOOT)
+ *    INITIAL SETUP (POWER ON)
  * ============================
  */
 void setup() 
 {
-  Serial.begin(SERIAL_SPEED);
-
   pinMode(PIN_ANODE_1, OUTPUT);
   pinMode(PIN_ANODE_2, OUTPUT);
   pinMode(PIN_ANODE_3, OUTPUT);
@@ -98,15 +96,16 @@ void setup()
   digitalWrite(PIN_BUTTON_RIGHT_LED, LOW);
   digitalWrite(PIN_BUTTON_LEFT_LED, LOW);
 
-  // ground
+  // ground for button assembly
   pinMode(PIN_BUTTON_GROUND, OUTPUT);
   digitalWrite(PIN_BUTTON_GROUND, LOW);
-}
 
+  Serial.begin(SERIAL_SPEED);
+}
 
 /*
  * ============================
- *    Internal Functions
+ *    Internal Functions - Hardware
  * ============================
  */
 
@@ -114,7 +113,7 @@ void setCathode(boolean ctrl0, int displayNumber) {
   byte a, b, c, d;
   d = c = b = a = 1;
   
-  // binary representation
+  // given a display number, set the matching binary representation in d,c,b,a
   switch(displayNumber) {
     case 0: d=0; c=0; b=0; a=0; break;
     case 1: d=0; c=0; b=0; a=1; break;
@@ -129,7 +128,6 @@ void setCathode(boolean ctrl0, int displayNumber) {
     default: d=1; c=1; b=1; a=1;
   }  
   
-  // write to output pins
   if (ctrl0) {
     // controller 0
     digitalWrite(PIN_CATHODE_0_D, d);
@@ -145,10 +143,7 @@ void setCathode(boolean ctrl0, int displayNumber) {
   }
 }
 
-void displayOnTube(int tubeIndex, int displayVal) {
-  int anode = TUBE_ANODES[tubeIndex];
-  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
-  
+void setAnode(int anode, int displayVal) {
   switch(anode) {
     case 1:
       digitalWrite(PIN_ANODE_2, LOW);
@@ -166,15 +161,27 @@ void displayOnTube(int tubeIndex, int displayVal) {
       digitalWrite(PIN_ANODE_3, displayVal == BLANK ? LOW : HIGH);
       break;
   }
+}
+
+void displayOnTubeExclusive(int tubeIndex, int displayVal) {
+  int anode = TUBE_ANODES[tubeIndex];
+  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
   
+  setAnode(anode, displayVal);
   setCathode(!cathodeCtrl0, BLANK);
   setCathode(cathodeCtrl0, displayVal);
 }
 
-void setButtonLEDs(bool left, bool right) {
-  digitalWrite(PIN_BUTTON_LEFT_LED, left ? HIGH : LOW);
-  digitalWrite(PIN_BUTTON_RIGHT_LED, right ? HIGH : LOW);
+void setButtonLEDs(bool leftOn, bool rightOn) {
+  digitalWrite(PIN_BUTTON_LEFT_LED, leftOn ? HIGH : LOW);
+  digitalWrite(PIN_BUTTON_RIGHT_LED, rightOn ? HIGH : LOW);
 }
+
+/*
+ * ============================
+ *    Internal Functions - Logical
+ * ============================
+ */
 
 void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
   mux[0] = t0;
@@ -187,20 +194,18 @@ void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
 
 void loopMultiplex() {
   if (micros() - lastDisplayRefreshTimestampUS > MUX_SINGLE_TUBE_LIT_DURATION_US) {
-    // move onto next tube
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
       lastDisplayRefreshTubeIndex--;
     }
 
-    displayOnTube(lastDisplayRefreshTubeIndex, mux[lastDisplayRefreshTubeIndex]);
-
+    displayOnTubeExclusive(lastDisplayRefreshTubeIndex, mux[lastDisplayRefreshTubeIndex]);
     lastDisplayRefreshTimestampUS = micros();
   }
 }
 
-void loopJackpot(unsigned long loopNow) {
+void handleJackpot(unsigned long loopNow) {
   if (loopNow - lastJackpotTimestampMS > JACKPOT_DURATION_MS) {
     jackpotOn = false;
   } else if (loopNow - lastEventStepTimestampMS > JACKPOT_STEP_DURATION_MS) {
@@ -225,7 +230,7 @@ void setMuxClockTime(unsigned long elapsedMS, unsigned long remainingMS, unsigne
   int sec = hoursRemainder % 60;
 
   // activate jackpot scroll on every whole minute (excluding when clock starts 
-  // and the last minute), in an effort to preserve tubes / prevent uneven burn
+  // and times out), in an effort to preserve tubes / prevent uneven burn
   if (sec == 0 && jackpotOn == false && elapsedMS > 1000 && remainingMS > 61000) {
     jackpotOn = true;
     lastJackpotTimestampMS = loopNow;
@@ -233,7 +238,7 @@ void setMuxClockTime(unsigned long elapsedMS, unsigned long remainingMS, unsigne
   }
 
   if (jackpotOn) {
-    loopJackpot(loopNow);
+    handleJackpot(loopNow);
   } else if (hours > 0) {
     setMux(hours / 10, hours % 10, min / 10, min % 10, sec / 10, sec % 10);
   } else if (min > 0) {
@@ -399,7 +404,7 @@ void loopCheckButtons(unsigned long loopNow) {
     utilityButtonLastDebounceMS = loopNow;
   }
 
-  // check right button debounce time exceeded with un-flickering changed value
+  // check right button debounce time exceeded with un-flickering, changed value
   unsigned long rightDebounceDiff = loopNow - rightButtonLastDebounceMS;
   if (rightDebounceDiff > BUTTON_DEBOUNCE_DELAY_MS && rightButtonReading != rightButtonVal) {
     rightButtonVal = rightButtonReading;
@@ -410,7 +415,7 @@ void loopCheckButtons(unsigned long loopNow) {
     }
   }
 
-  // check left button debounce time exceeded with un-flickering changed value
+  // check left button debounce time exceeded with un-flickering, changed value
   unsigned long leftDebounceDiff = loopNow - leftButtonLastDebounceMS;
   if (leftDebounceDiff > BUTTON_DEBOUNCE_DELAY_MS && leftButtonReading != leftButtonVal) {
     leftButtonVal = leftButtonReading;
@@ -421,7 +426,7 @@ void loopCheckButtons(unsigned long loopNow) {
     }
   }
 
-  // check utility button debounce time exceeded with un-flickering changed value
+  // check utility button debounce time exceeded with un-flickering, changed value
   unsigned long utilityDebounceDiff = loopNow - utilityButtonLastDebounceMS;
   if (utilityDebounceDiff > BUTTON_DEBOUNCE_DELAY_MS && utilityButtonReading != utilityButtonVal) {
     utilityButtonVal = utilityButtonReading;
@@ -438,7 +443,6 @@ void loopCheckButtons(unsigned long loopNow) {
   utilityButtonLastVal = utilityButtonReading;
 }
 
-
 /*
  * ============================
  *    MAIN LOOP (CONTINUOUS)
@@ -452,7 +456,7 @@ void loop() {
 
   CountdownValues cv = { 0UL, 0UL };
 
-  // update values to display based on current state
+  // update values to display in mux[] based on current clock state
   if (currentClockState == RUNNING) {
     cv = loopCountdown(now);
   } else if (currentClockState == TIMEOUT) {
@@ -466,7 +470,7 @@ void loop() {
     loopIdle();
   }
 
-  // display current values
+  // display current values in mux[]
   loopMultiplex();
 
   loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
