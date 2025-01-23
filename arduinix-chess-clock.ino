@@ -9,7 +9,6 @@
  * ============================
  */
 const long SERIAL_SPEED = 115200L;
-const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
 const int JACKPOT_STEP_DURATION_MS = 75;
 const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * 10 * 2;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
@@ -17,6 +16,10 @@ const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
+
+// Assuming TUBE_COUNT == 6:
+// 300µs (92.5Hz) - 500µs (55.5Hz) recommended, tested on IN-2 and IN-12 tubes
+const int MUX_SINGLE_TUBE_LIT_DURATION_US = 300;
 
 /*
  * ============================
@@ -183,7 +186,7 @@ void setMux(int t0, int t1, int t2, int t3, int t4, int t5) {
 }
 
 void loopMultiplex() {
-  if (micros() - lastDisplayRefreshTimestampUS > MUX_SINGLE_TUBE_DELAY_US) {
+  if (micros() - lastDisplayRefreshTimestampUS > MUX_SINGLE_TUBE_LIT_DURATION_US) {
     // move onto next tube
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
