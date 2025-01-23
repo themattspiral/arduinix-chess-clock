@@ -10,7 +10,8 @@
  */
 const long SERIAL_SPEED = 115200L;
 const int MUX_SINGLE_TUBE_DELAY_US = 500;   // 300-3000µs is ideal for IN-2 tubes, 100-1000µs for IN-12 tubes
-const int DEMO_STEP_DURATION_MS = 150;
+const int JACKPOT_STEP_DURATION_MS = 75;
+const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * 10 * 2;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
@@ -42,10 +43,12 @@ unsigned long lastDisplayRefreshTimestampUS = 0UL;
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = IDLE;
 unsigned long lastStatusUpdateTimestampMS = 0UL;
+unsigned long lastJackpotTimestampMS = 0UL;
 unsigned long lastEventStepTimestampMS = 0UL;
 unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
+bool jackpotOn = false;
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 int currentTurnTimerOption = 2;
 
@@ -194,14 +197,41 @@ void loopMultiplex() {
   }
 }
 
-void setMuxClockTime(unsigned long turnTimeMS) {
-  unsigned long elapsedSec = turnTimeMS / 1000;
-  int hours = elapsedSec / 3600;
-  int hoursRemainder = elapsedSec % 3600;
+void loopJackpot(unsigned long loopNow) {
+  if (loopNow - lastJackpotTimestampMS > JACKPOT_DURATION_MS) {
+    jackpotOn = false;
+  } else if (loopNow - lastEventStepTimestampMS > JACKPOT_STEP_DURATION_MS) {
+    lastEventStepTimestampMS = loopNow;
+
+    for (int i = 0; i < TUBE_COUNT; i++) {
+      if (mux[i] == 0) {
+        mux[i] = 9;
+      } else {
+        mux[i]--;
+      }
+    }
+  }
+}
+
+void setMuxClockTime(unsigned long elapsedMS, unsigned long remainingMS, unsigned long loopNow, bool displayElapsed) {
+  unsigned long totalMS = displayElapsed ? elapsedMS : remainingMS;
+  unsigned long totalSec = totalMS / 1000;
+  int hours = totalSec / 3600;
+  int hoursRemainder = totalSec % 3600;
   int min = hoursRemainder / 60;
   int sec = hoursRemainder % 60;
 
-  if (hours > 0) {
+  // activate jackpot scroll on every whole minute (excluding when clock starts 
+  // and the last minute), in an effort to preserve tubes / prevent uneven burn
+  if (sec == 0 && jackpotOn == false && elapsedMS > 1000 && remainingMS > 61000) {
+    jackpotOn = true;
+    lastJackpotTimestampMS = loopNow;
+    setMux(0, 0, 0, 0, 0, 0);
+  }
+
+  if (jackpotOn) {
+    loopJackpot(loopNow);
+  } else if (hours > 0) {
     setMux(hours / 10, hours % 10, min / 10, min % 10, sec / 10, sec % 10);
   } else if (min > 0) {
     if (leftPlayersTurn) {
@@ -210,7 +240,7 @@ void setMuxClockTime(unsigned long turnTimeMS) {
       setMux(BLANK, BLANK, min / 10, min % 10, sec / 10, sec % 10);
     }
   } else {
-    int fractionalSec = (turnTimeMS % 1000) / 10;
+    int fractionalSec = (totalMS % 1000) / 10;
 
     if (leftPlayersTurn) {
       setMux(sec / 10, sec % 10, fractionalSec / 10, fractionalSec % 10, BLANK, BLANK);
@@ -228,15 +258,15 @@ CountdownValues loopCountdown(unsigned long loopNow) {
   setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
 
   if (timeoutLimit == 0UL) {
-    // when limit is special value 0, show elapsed time and never timeout
-    setMuxClockTime(elapsedMS);
+    // special value 0: show elapsed time & never timeout
+    setMuxClockTime(elapsedMS, remainingMS, loopNow, true);
   } else if (elapsedMS >= timeoutLimit) {
-    // countdown expired, change state
+    // countdown expired: change state
     remainingMS = 0UL;
     currentClockState = TIMEOUT;
   } else {
-    // countdown is running - show remaining time
-    setMuxClockTime(remainingMS);
+    // countdown running: show remaining time
+    setMuxClockTime(elapsedMS, remainingMS, loopNow, false);
   }
 
   return { elapsedMS, remainingMS };
@@ -252,11 +282,9 @@ void loopTimeout(unsigned long loopNow) {
     setButtonLEDs(true, true);
 
     if (leftPlayersTurn) {
-      // left player timed out
       setMux(0, 0, 0, 0, BLANK, BLANK);
     } else {
-      // right player timed out
-      setMux( BLANK, BLANK, 0, 0, 0, 0);
+      setMux(BLANK, BLANK, 0, 0, 0, 0);
     }
   } else {
     setButtonLEDs(!leftPlayersTurn, leftPlayersTurn);
@@ -289,20 +317,6 @@ void loopMenu(unsigned long loopNow) {
 void loopIdle() {
   setButtonLEDs(false, false);
   setMux(BLANK, BLANK, BLANK, BLANK, BLANK, BLANK);
-}
-
-void loopDemoCount(unsigned long loopNow) {
-  if (loopNow - lastEventStepTimestampMS > DEMO_STEP_DURATION_MS) {
-    lastEventStepTimestampMS = loopNow;
-
-    for (int i = 0; i < TUBE_COUNT; i++) {
-      if (mux[i] == 9) {
-        mux[i] = 0;
-      } else {
-        mux[i]++;
-      }
-    }
-  }
 }
 
 void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
@@ -444,7 +458,7 @@ void loop() {
   } else if (currentClockState == MENU) {
     loopMenu(now);
   } else if (currentClockState == DEMO) {
-    loopDemoCount(now);
+    // loopDemoCount(now);
   } else if (currentClockState == IDLE) {
     loopIdle();
   }
