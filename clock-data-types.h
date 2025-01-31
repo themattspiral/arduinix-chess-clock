@@ -35,8 +35,13 @@ const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
   { { BLANK, BLANK, 0, 5, BLANK, BLANK }, 300000UL, "5m" },
   { { BLANK, BLANK, 0, 3, BLANK, BLANK }, 180000UL, "3m" },
   { { BLANK, BLANK, 0, 1, BLANK, BLANK }, 60000UL, "1m" },
-  { { BLANK, BLANK, BLANK, BLANK, 1, 0 }, 10000UL, "10s" },     // for testing
+  { { BLANK, BLANK, BLANK, BLANK, 1, 0 }, 10000UL, "10s" },
   { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "n0L" }
 };
+
+const byte BIT_0 = 1 << 0;
+const byte BIT_1 = 1 << 1;
+const byte BIT_2 = 1 << 2;
+const byte BIT_3 = 1 << 3;
 
 #endif _CLOCK_DATA_TYPES_H

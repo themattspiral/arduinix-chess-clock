@@ -3,6 +3,10 @@
 #include "clock-hardware.h"
 #include "clock-data-types.h"
 
+const int LOOP_TIME_SAMPLE_COUNT = 100;
+int LOOP_TIME_SAMPLE_IDX = 0;
+int LOOP_TIME_SAMPLES_US[LOOP_TIME_SAMPLE_COUNT];
+
 /*
  * ===============================
  *  Behavior Constants
@@ -17,11 +21,12 @@ const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
-const int STATUS_UPDATE_MAX_CHARS = 30;
+const int STATUS_UPDATE_MAX_CHARS = 40;
 
 // 300µs - 500µs is recommended. Assuming TUBE_COUNT == 6 this is equivalent to
 // a per-tube refresh rate of 92.5Hz - 55.5Hz. Tested on ИH-2 and ИH-12A tubes.
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 280;  // 100Hz
+const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 300;
+const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 100;
 
 /*
  * ===============================
@@ -44,6 +49,7 @@ unsigned long utilityButtonLastDebounceMS = 0UL;
 int multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
 int lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
+bool multiplexIsLit = false;
 
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = IDLE;
@@ -105,6 +111,10 @@ void setup()
   digitalWrite(PIN_BUTTON_GROUND, LOW);
 
   Serial.begin(SERIAL_SPEED_BAUD);
+
+  for (int i=0; i < LOOP_TIME_SAMPLE_COUNT; i++) {
+    LOOP_TIME_SAMPLES_US[i] = 0;
+  }
 }
 
 /*
@@ -166,6 +176,101 @@ void setAnode(int anode, int displayVal) {
   }
 }
 
+void displayOnTubeExclusiveDPM(int tubeIndex, int displayVal) {
+  int anode = TUBE_ANODES[tubeIndex];
+  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
+  
+  byte c0Val, c1Val;
+
+  // blank the other cathode so that the anode for the specified tube won't
+  // light both of the tubes that it's connected to when activated
+  if (cathodeCtrl0) {
+    c0Val = displayVal;
+    c1Val = BLANK;
+  } else {
+    c0Val = BLANK;
+    c1Val = displayVal;
+  }
+
+  // 4 bitmasks to be used when setting PORTB and PORTD hardware registers,
+  // aka Direct Port Manipulation
+  byte portBHighBitmask, portBLowBitmask, portDHighBitmask, portDLowBitmask;
+  portBHighBitmask = portBLowBitmask = portDHighBitmask = portDLowBitmask = 0;
+
+  // Build PORTB low and high bitmasks for digital pins 8-13,
+  // which control the high half of cathode 1 and all 4 anodes
+  if ((c1Val & BIT_2) == 0) {
+    portBLowBitmask |= PIN_CATHODE_1_C_DPM_BIT;
+  } else {
+    portBHighBitmask |= PIN_CATHODE_1_C_DPM_BIT;
+  }
+  if ((c1Val & BIT_3) == 0) {
+    portBLowBitmask |= PIN_CATHODE_1_D_DPM_BIT;
+  } else {
+    portBHighBitmask |= PIN_CATHODE_1_D_DPM_BIT;
+  }
+
+  if (displayVal == BLANK) {
+    portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+  } else {
+    switch(anode) {
+      case 1:
+        portBLowBitmask |= PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_1_DPM_BIT;
+        break;
+      case 2:
+        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_2_DPM_BIT;
+        break;
+      case 3:
+        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_3_DPM_BIT;
+        break;
+    } 
+  }
+
+  // Build PORTD bitmasks for digital pins 0-7,
+  // which control cathode 0 and the low half of cathode 1
+  if ((c0Val & BIT_0) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_A_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_A_DPM_BIT;
+  }
+  if ((c0Val & BIT_1) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_B_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_B_DPM_BIT;
+  }
+  if ((c0Val & BIT_2) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_C_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_C_DPM_BIT;
+  }
+  if ((c0Val & BIT_3) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_D_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_D_DPM_BIT;
+  }
+  if ((c1Val & BIT_0) == 0) {
+    portDLowBitmask |= PIN_CATHODE_1_A_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_1_A_DPM_BIT;
+  }
+  if ((c1Val & BIT_1) == 0) {
+    portDLowBitmask |= PIN_CATHODE_1_B_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_1_B_DPM_BIT;
+  }
+
+  // LOW mask PORTB first to power OFF Anodes FIRST
+  PORTB &= ~portBLowBitmask;
+  PORTD &= ~portDLowBitmask;
+
+  // HIGH mask PORTD first to power ON Anodes LAST
+  PORTD |= portDHighBitmask;
+  PORTB |= portBHighBitmask;
+}
+
 void displayOnTubeExclusive(int tubeIndex, int displayVal) {
   int anode = TUBE_ANODES[tubeIndex];
   bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
@@ -196,14 +301,21 @@ void setMultiplexDisplay(int t0, int t1, int t2, int t3, int t4, int t5) {
 }
 
 void loopMultiplex() {
-  if (micros() - lastDisplayRefreshTimestampUS > MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+  if (multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+    displayOnTubeExclusiveDPM(lastDisplayRefreshTubeIndex, BLANK);
+    // displayOnTubeExclusive(lastDisplayRefreshTubeIndex, BLANK);
+    multiplexIsLit = false;
+    lastDisplayRefreshTimestampUS = micros();
+  } else if (!multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US) {
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
       lastDisplayRefreshTubeIndex--;
     }
 
-    displayOnTubeExclusive(lastDisplayRefreshTubeIndex, multiplexDisplayValues[lastDisplayRefreshTubeIndex]);
+    displayOnTubeExclusiveDPM(lastDisplayRefreshTubeIndex, multiplexDisplayValues[lastDisplayRefreshTubeIndex]);
+    // displayOnTubeExclusive(lastDisplayRefreshTubeIndex, multiplexDisplayValues[lastDisplayRefreshTubeIndex]);
+    multiplexIsLit = true;
     lastDisplayRefreshTimestampUS = micros();
   }
 }
@@ -245,7 +357,8 @@ void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, u
 
   // activate jackpot scroll on every whole minute (excluding when clock starts 
   // and times out), in an effort to preserve tubes / prevent uneven burn
-  if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
+  // if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
+  if ((sec % 10 == 0) && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
     jackpotOn = true;
     lastJackpotTimestampMS = loopNow;
     
@@ -346,12 +459,19 @@ void loopIdle() {
 
 void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
   if (loopNow - lastStatusUpdateTimestampMS > STATUS_UPDATE_INTERVAL_MS) {
-    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu", 
+    // unsigned long allSamplesUS = 0;
+    // for (int i=0; i < LOOP_TIME_SAMPLE_COUNT; i++) {
+    //   allSamplesUS += LOOP_TIME_SAMPLES_US[i];
+    // }
+
+    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu,%lu",
       currentClockState,
       TURN_TIMER_OPTIONS[currentTurnTimerOption].label,
       leftPlayersTurn,
       elapsedMs,
-      remainingMs
+      remainingMs,
+      // allSamplesUS / LOOP_TIME_SAMPLE_COUNT
+      0UL
     );
     Serial.println(statusUpdate);
     lastStatusUpdateTimestampMS = millis();
@@ -466,6 +586,8 @@ void loopCheckButtons(unsigned long loopNow) {
  * ============================
  */
 void loop() {
+  unsigned long loopStartUS = micros();
+
   unsigned long now = millis();
 
   // check for button presses and change state if needed
@@ -491,4 +613,9 @@ void loop() {
   loopMultiplex();
 
   loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
+
+  LOOP_TIME_SAMPLES_US[LOOP_TIME_SAMPLE_IDX] = micros() - loopStartUS;
+  if (LOOP_TIME_SAMPLE_IDX < LOOP_TIME_SAMPLE_COUNT - 1) {
+    LOOP_TIME_SAMPLE_IDX++;
+  }
 }

@@ -25,6 +25,20 @@ const int PIN_ANODE_2 = 11;
 const int PIN_ANODE_3 = 12;
 const int PIN_ANODE_4 = 13;
 
+// Arduino Uno R1-R3 Direct Port Manipulation
+const byte PIN_CATHODE_0_A_DPM_BIT = 1 << 2;  // pin 2: PORTD bit 2
+const byte PIN_CATHODE_0_B_DPM_BIT = 1 << 3;  // pin 3: PORTD bit 3
+const byte PIN_CATHODE_0_C_DPM_BIT = 1 << 4;  // pin 4: PORTD bit 4
+const byte PIN_CATHODE_0_D_DPM_BIT = 1 << 5;  // pin 5: PORTD bit 5
+const byte PIN_CATHODE_1_A_DPM_BIT = 1 << 6;  // pin 6: PORTD bit 6
+const byte PIN_CATHODE_1_B_DPM_BIT = 1 << 7;  // pin 7: PORTD bit 7
+const byte PIN_CATHODE_1_C_DPM_BIT = 1 << 0;  // pin 8: PORTB bit 0
+const byte PIN_CATHODE_1_D_DPM_BIT = 1 << 1;  // pin 9: PORTB bit 1
+const byte PIN_ANODE_1_DPM_BIT = 1 << 2;  // pin 10: PORTB bit 2
+const byte PIN_ANODE_2_DPM_BIT = 1 << 3;  // pin 11: PORTB bit 3
+const byte PIN_ANODE_3_DPM_BIT = 1 << 4;  // pin 12: PORTB bit 4
+const byte PIN_ANODE_4_DPM_BIT = 1 << 5;  // pin 13: PORTB bit 5
+
 // button pins
 const int PIN_BUTTON_RIGHT = A0;
 const int PIN_BUTTON_LEFT = A1;
