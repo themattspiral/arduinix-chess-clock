@@ -25,7 +25,7 @@ const int STATUS_UPDATE_MAX_CHARS = 40;
 
 // 300µs - 500µs is recommended. Assuming TUBE_COUNT == 6 this is equivalent to
 // a per-tube refresh rate of 92.5Hz - 55.5Hz. Tested on ИH-2 and ИH-12A tubes.
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 300;
+const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 500;
 const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 100;
 
 /*
@@ -35,19 +35,19 @@ const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 100;
  */
 
 // button state 🔘🔘
-int rightButtonLastVal = HIGH;
-int leftButtonLastVal = HIGH;
-int utilityButtonLastVal = HIGH;
-int rightButtonVal = HIGH;
-int leftButtonVal = HIGH;
-int utilityButtonVal = HIGH;
+byte rightButtonLastVal = HIGH;
+byte leftButtonLastVal = HIGH;
+byte utilityButtonLastVal = HIGH;
+byte rightButtonVal = HIGH;
+byte leftButtonVal = HIGH;
+byte utilityButtonVal = HIGH;
 unsigned long rightButtonLastDebounceMS = 0UL;
 unsigned long leftButtonLastDebounceMS = 0UL;
 unsigned long utilityButtonLastDebounceMS = 0UL;
 
 // nixie tube state 🚥🚥
-int multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
-int lastDisplayRefreshTubeIndex = TUBE_COUNT;
+byte multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
+byte lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
 bool multiplexIsLit = false;
 
@@ -61,9 +61,9 @@ bool leftPlayersTurn = false;
 bool blinkOn = false;
 bool jackpotOn = false;
 bool jackpotDirectionFTB = true;
-int jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
+byte jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
-int currentTurnTimerOption = 2;
+byte currentTurnTimerOption = 2;
 
 /*
  * ===============================
@@ -123,7 +123,7 @@ void setup()
  * ===============================
  */
 
-void setCathode(boolean ctrl0, int displayNumber) {
+void setCathode(boolean ctrl0, byte displayNumber) {
   byte a, b, c, d;
   d = c = b = a = 1;
   
@@ -156,7 +156,7 @@ void setCathode(boolean ctrl0, int displayNumber) {
   }
 }
 
-void setAnode(int anode, int displayVal) {
+void setAnode(byte anode, byte displayVal) {
   switch(anode) {
     case 1:
       digitalWrite(PIN_ANODE_2, LOW);
@@ -176,8 +176,8 @@ void setAnode(int anode, int displayVal) {
   }
 }
 
-void displayOnTubeExclusiveDPM(int tubeIndex, int displayVal) {
-  int anode = TUBE_ANODES[tubeIndex];
+void displayOnTubeExclusiveDPM(byte tubeIndex, byte displayVal) {
+  byte anode = TUBE_ANODES[tubeIndex];
   bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
   
   byte c0Val, c1Val;
@@ -271,8 +271,8 @@ void displayOnTubeExclusiveDPM(int tubeIndex, int displayVal) {
   PORTB |= portBHighBitmask;
 }
 
-void displayOnTubeExclusive(int tubeIndex, int displayVal) {
-  int anode = TUBE_ANODES[tubeIndex];
+void displayOnTubeExclusive(byte tubeIndex, byte displayVal) {
+  byte anode = TUBE_ANODES[tubeIndex];
   bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
   
   setAnode(anode, displayVal);
@@ -291,7 +291,7 @@ void setButtonLEDs(bool leftOn, bool rightOn) {
  * ===============================
  */
 
-void setMultiplexDisplay(int t0, int t1, int t2, int t3, int t4, int t5) {
+void setMultiplexDisplay(byte t0, byte t1, byte t2, byte t3, byte t4, byte t5) {
   multiplexDisplayValues[0] = t0;
   multiplexDisplayValues[1] = t1;
   multiplexDisplayValues[2] = t2;
@@ -335,7 +335,7 @@ void handleJackpot(unsigned long loopNow) {
     jackpotOn = false;
   } else if (loopNow - lastEventStepTimestampMS > JACKPOT_STEP_DURATION_MS) {
     // advance to next jackpot step
-    for (int i = 0; i < TUBE_COUNT; i++) {
+    for (byte i = 0; i < TUBE_COUNT; i++) {
       if (jackpotDigitOrderIndexValues[i] == 9) {
         jackpotDigitOrderIndexValues[i] = 0;
       } else {
@@ -362,7 +362,7 @@ void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, u
     jackpotOn = true;
     lastJackpotTimestampMS = loopNow;
     
-    for (int i = 0; i < TUBE_COUNT; i++) {
+    for (byte i = 0; i < TUBE_COUNT; i++) {
       jackpotDigitOrderIndexValues[i] = 9;
     }
   }
@@ -526,9 +526,9 @@ void handleUtilityButtonPress(unsigned long loopNow) {
 }
 
 void loopCheckButtons(unsigned long loopNow) {
-  int rightButtonReading = digitalRead(PIN_BUTTON_RIGHT);
-  int leftButtonReading = digitalRead(PIN_BUTTON_LEFT);
-  int utilityButtonReading = digitalRead(PIN_BUTTON_UTILITY);
+  byte rightButtonReading = digitalRead(PIN_BUTTON_RIGHT);
+  byte leftButtonReading = digitalRead(PIN_BUTTON_LEFT);
+  byte utilityButtonReading = digitalRead(PIN_BUTTON_UTILITY);
 
   // handle press state change (set debounce timer)
   if (rightButtonReading != rightButtonLastVal) {

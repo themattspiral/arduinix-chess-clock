@@ -12,7 +12,7 @@
 enum ClockState { IDLE, RUNNING, TIMEOUT, MENU, DEMO };
 
 typedef struct {
-  int displayValues[TUBE_COUNT];
+  byte displayValues[TUBE_COUNT];
   unsigned long turnLimitMS;
   char label[4];
 } TurnTimerOption;
@@ -22,7 +22,7 @@ typedef struct {
   unsigned long remainingMS;
 } CountdownValues;
 
-const int TURN_TIMER_OPTIONS_COUNT = 13;
+const byte TURN_TIMER_OPTIONS_COUNT = 13;
 const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
   { { 7, 2, BLANK, BLANK, BLANK, BLANK }, 259201000UL, "72h" },
   { { 4, 8, BLANK, BLANK, BLANK, BLANK }, 172801000UL, "48h" },
