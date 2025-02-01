@@ -21,8 +21,9 @@ const int STATUS_UPDATE_MAX_CHARS = 30;
 
 // TODO - test for ideal values on ИH-2 and ИH-12A tubes
 //      - calculate corresponding Hz
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 800;
-const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 300;
+const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1100;
+const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 200;
+const int MULTIPLEX_HV_STABILIZATION_DELAY_US = 5;
 
 /*
  * ===============================
@@ -196,6 +197,7 @@ inline void displayOnTubeExclusive(byte tubeIndex, byte displayVal) {
   // LOW mask PORTB first to power OFF Anodes FIRST
   PORTB &= ~portBLowBitmask;
   PORTD &= ~portDLowBitmask;
+  delayMicroseconds(MULTIPLEX_HV_STABILIZATION_DELAY_US);
 
   // HIGH mask PORTD first to power ON Anodes LAST
   PORTD |= portDHighBitmask;
