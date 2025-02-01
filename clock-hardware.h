@@ -25,20 +25,6 @@ const byte PIN_ANODE_2 = 11;
 const byte PIN_ANODE_3 = 12;
 const byte PIN_ANODE_4 = 13;
 
-// Arduino Uno R1-R3 Direct Port Manipulation
-const byte PIN_CATHODE_0_A_DPM_BIT = 1 << 2;  // pin 2: PORTD bit 2
-const byte PIN_CATHODE_0_B_DPM_BIT = 1 << 3;  // pin 3: PORTD bit 3
-const byte PIN_CATHODE_0_C_DPM_BIT = 1 << 4;  // pin 4: PORTD bit 4
-const byte PIN_CATHODE_0_D_DPM_BIT = 1 << 5;  // pin 5: PORTD bit 5
-const byte PIN_CATHODE_1_A_DPM_BIT = 1 << 6;  // pin 6: PORTD bit 6
-const byte PIN_CATHODE_1_B_DPM_BIT = 1 << 7;  // pin 7: PORTD bit 7
-const byte PIN_CATHODE_1_C_DPM_BIT = 1 << 0;  // pin 8: PORTB bit 0
-const byte PIN_CATHODE_1_D_DPM_BIT = 1 << 1;  // pin 9: PORTB bit 1
-const byte PIN_ANODE_1_DPM_BIT = 1 << 2;  // pin 10: PORTB bit 2
-const byte PIN_ANODE_2_DPM_BIT = 1 << 3;  // pin 11: PORTB bit 3
-const byte PIN_ANODE_3_DPM_BIT = 1 << 4;  // pin 12: PORTB bit 4
-const byte PIN_ANODE_4_DPM_BIT = 1 << 5;  // pin 13: PORTB bit 5
-
 // button pins
 const byte PIN_BUTTON_RIGHT = A0;
 const byte PIN_BUTTON_LEFT = A1;
@@ -46,6 +32,26 @@ const byte PIN_BUTTON_RIGHT_LED = A2;
 const byte PIN_BUTTON_LEFT_LED = A3;
 const byte PIN_BUTTON_UTILITY = A4;
 const byte PIN_BUTTON_GROUND = A5;
+
+// Arduino Uno R1-R3 Direct Port Manipulation
+const byte PIN_CATHODE_0_A_DPM_BIT = 1 << 2;        // pin 2: PORTD bit 2
+const byte PIN_CATHODE_0_B_DPM_BIT = 1 << 3;        // pin 3: PORTD bit 3
+const byte PIN_CATHODE_0_C_DPM_BIT = 1 << 4;        // pin 4: PORTD bit 4
+const byte PIN_CATHODE_0_D_DPM_BIT = 1 << 5;        // pin 5: PORTD bit 5
+const byte PIN_CATHODE_1_A_DPM_BIT = 1 << 6;        // pin 6: PORTD bit 6
+const byte PIN_CATHODE_1_B_DPM_BIT = 1 << 7;        // pin 7: PORTD bit 7
+const byte PIN_CATHODE_1_C_DPM_BIT = 1 << 0;        // pin 8: PORTB bit 0
+const byte PIN_CATHODE_1_D_DPM_BIT = 1 << 1;        // pin 9: PORTB bit 1
+const byte PIN_ANODE_1_DPM_BIT = 1 << 2;            // pin 10: PORTB bit 2
+const byte PIN_ANODE_2_DPM_BIT = 1 << 3;            // pin 11: PORTB bit 3
+const byte PIN_ANODE_3_DPM_BIT = 1 << 4;            // pin 12: PORTB bit 4
+const byte PIN_ANODE_4_DPM_BIT = 1 << 5;            // pin 13: PORTB bit 5
+const byte PIN_BUTTON_RIGHT_DPM_BIT = 1 << 0;       // pin A0 (14): PORTC bit 0
+const byte PIN_BUTTON_LEFT_DPM_BIT = 1 << 1;        // pin A1 (15): PORTC bit 1
+const byte PIN_BUTTON_RIGHT_LED_DPM_BIT = 1 << 2;   // pin A2 (16): PORTC bit 2
+const byte PIN_BUTTON_LEFT_LED_DPM_BIT = 1 << 3;    // pin A3 (17): PORTC bit 3
+const byte PIN_BUTTON_UTILITY_DPM_BIT = 1 << 4;     // pin A4 (18): PORTC bit 4
+const byte PIN_BUTTON_GROUND_DPM_BIT = 1 << 5;      // pin A5 (19): PORTC bit 5
 
 // The clock is designed to use 6 tubes, each one wired to a unique combination
 // of an anode pin (live power) and a cathode controller chip К155ИД1 (ground).
