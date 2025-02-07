@@ -10,21 +10,22 @@
  */
 const long SERIAL_SPEED_BAUD = 115200L;
 const int JACKPOT_STEP_DURATION_MS = 50;
-const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * 5;
+const int JACKPOT_FULL_ROUNDS = 5;
+const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * JACKPOT_FULL_ROUNDS;
 const unsigned long JACKPOT_MIN_ELAPSED_MS = 1000UL;
 const unsigned long JACKPOT_MIN_REMAINING_MS = 61000UL;
+const unsigned long MAX_DISPLAY_ELAPSED_MS = 359999900UL; // 99:59:59:900
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
-const unsigned long MAX_DISPLAY_ELAPSED_MS = 359999900UL; // 99:59:59:900
-
-// TODO - test for ideal values on ИH-2 and ИH-12A tubes
-//      - calculate corresponding Hz
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1100;
-const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 200;
 const int MULTIPLEX_HV_STABILIZATION_DELAY_US = 5;
+
+// ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
+// using a 1.4ms (1400µs) per-tube cycle: 1000ms / (1.4ms/tube * 6tubes)
+const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1200; // ~86% lit
+const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 200;  // ~14% off
 
 /*
  * ===============================
@@ -58,7 +59,6 @@ unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
 bool jackpotOn = false;
-bool jackpotDirectionFTB = true;
 byte jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 byte currentTurnTimerOption = 2;
