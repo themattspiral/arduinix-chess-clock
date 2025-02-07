@@ -10,18 +10,21 @@
  */
 const long SERIAL_SPEED_BAUD = 115200L;
 const int JACKPOT_STEP_DURATION_MS = 50;
-const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * 3;
+const int JACKPOT_FULL_ROUNDS = 5;
+const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * JACKPOT_FULL_ROUNDS;
 const unsigned long JACKPOT_MIN_ELAPSED_MS = 1000UL;
 const unsigned long JACKPOT_MIN_REMAINING_MS = 61000UL;
+const unsigned long MAX_DISPLAY_ELAPSED_MS = 359999900UL; // 99:59:59:900
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
 
-// 300µs - 500µs is recommended. Assuming TUBE_COUNT == 6 this is equivalent to
-// a per-tube refresh rate of 92.5Hz - 55.5Hz. Tested on ИH-2 and ИH-12A tubes.
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 280;  // 100Hz
+// ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
+// using a 1.4ms (1400µs) per-tube cycle: 1000ms / (1.4ms/tube * 6tubes)
+const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1200; // ~86% lit
+const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 200;  // ~14% off
 
 /*
  * ===============================
@@ -30,20 +33,21 @@ const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 280;  // 100Hz
  */
 
 // button state 🔘🔘
-int rightButtonLastVal = HIGH;
-int leftButtonLastVal = HIGH;
-int utilityButtonLastVal = HIGH;
-int rightButtonVal = HIGH;
-int leftButtonVal = HIGH;
-int utilityButtonVal = HIGH;
+byte rightButtonLastVal = HIGH;
+byte leftButtonLastVal = HIGH;
+byte utilityButtonLastVal = HIGH;
+byte rightButtonVal = HIGH;
+byte leftButtonVal = HIGH;
+byte utilityButtonVal = HIGH;
 unsigned long rightButtonLastDebounceMS = 0UL;
 unsigned long leftButtonLastDebounceMS = 0UL;
 unsigned long utilityButtonLastDebounceMS = 0UL;
 
 // nixie tube state 🚥🚥
-int multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
-int lastDisplayRefreshTubeIndex = TUBE_COUNT;
+byte multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
+byte lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
+bool multiplexIsLit = false;
 
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = IDLE;
@@ -54,10 +58,9 @@ unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
 bool jackpotOn = false;
-bool jackpotDirectionFTB = true;
-int jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
+byte jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
-int currentTurnTimerOption = 2;
+byte currentTurnTimerOption = 2;
 
 /*
  * ===============================
@@ -70,24 +73,16 @@ void setup()
   pinMode(PIN_ANODE_2, OUTPUT);
   pinMode(PIN_ANODE_3, OUTPUT);
   pinMode(PIN_ANODE_4, OUTPUT);
-  
   pinMode(PIN_CATHODE_0_A, OUTPUT);
   pinMode(PIN_CATHODE_0_B, OUTPUT);
   pinMode(PIN_CATHODE_0_C, OUTPUT);
   pinMode(PIN_CATHODE_0_D, OUTPUT);
-  
   pinMode(PIN_CATHODE_1_A, OUTPUT);
   pinMode(PIN_CATHODE_1_B, OUTPUT);
   pinMode(PIN_CATHODE_1_C, OUTPUT);
   pinMode(PIN_CATHODE_1_D, OUTPUT);
   
-  digitalWrite(PIN_ANODE_1, LOW);
-  digitalWrite(PIN_ANODE_2, LOW);
-  digitalWrite(PIN_ANODE_3, LOW);
-  digitalWrite(PIN_ANODE_4, LOW);
-  
-  setCathode(true, BLANK);
-  setCathode(false, BLANK);
+  displayOnTubeExclusive(0, BLANK);
 
   // use analog inputs as digital inputs for buttons
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
@@ -97,87 +92,14 @@ void setup()
   // use analog inputs as digital outputs for button LEDs
   pinMode(PIN_BUTTON_RIGHT_LED, OUTPUT);
   pinMode(PIN_BUTTON_LEFT_LED, OUTPUT);
-  digitalWrite(PIN_BUTTON_RIGHT_LED, LOW);
-  digitalWrite(PIN_BUTTON_LEFT_LED, LOW);
 
   // ground for button assembly
   pinMode(PIN_BUTTON_GROUND, OUTPUT);
   digitalWrite(PIN_BUTTON_GROUND, LOW);
 
+  setButtonLEDs(false, false);
+
   Serial.begin(SERIAL_SPEED_BAUD);
-}
-
-/*
- * ===============================
- *  Internal Functions - Hardware
- * ===============================
- */
-
-void setCathode(boolean ctrl0, int displayNumber) {
-  byte a, b, c, d;
-  d = c = b = a = 1;
-  
-  // given a decimal display number, set the matching binary representation
-  // as input to the specified cathode controller
-  switch(displayNumber) {
-    case 0: d=0; c=0; b=0; a=0; break;
-    case 1: d=0; c=0; b=0; a=1; break;
-    case 2: d=0; c=0; b=1; a=0; break;
-    case 3: d=0; c=0; b=1; a=1; break;
-    case 4: d=0; c=1; b=0; a=0; break;
-    case 5: d=0; c=1; b=0; a=1; break;
-    case 6: d=0; c=1; b=1; a=0; break;
-    case 7: d=0; c=1; b=1; a=1; break;
-    case 8: d=1; c=0; b=0; a=0; break;
-    case 9: d=1; c=0; b=0; a=1; break;
-    default: d=1; c=1; b=1; a=1;
-  }  
-  
-  if (ctrl0) {
-    digitalWrite(PIN_CATHODE_0_D, d);
-    digitalWrite(PIN_CATHODE_0_C, c);
-    digitalWrite(PIN_CATHODE_0_B, b);
-    digitalWrite(PIN_CATHODE_0_A, a);
-  } else {
-    digitalWrite(PIN_CATHODE_1_D, d);
-    digitalWrite(PIN_CATHODE_1_C, c);
-    digitalWrite(PIN_CATHODE_1_B, b);
-    digitalWrite(PIN_CATHODE_1_A, a);
-  }
-}
-
-void setAnode(int anode, int displayVal) {
-  switch(anode) {
-    case 1:
-      digitalWrite(PIN_ANODE_2, LOW);
-      digitalWrite(PIN_ANODE_3, LOW);
-      digitalWrite(PIN_ANODE_1, displayVal == BLANK ? LOW : HIGH);
-      break;
-    case 2:
-      digitalWrite(PIN_ANODE_1, LOW);
-      digitalWrite(PIN_ANODE_3, LOW);
-      digitalWrite(PIN_ANODE_2, displayVal == BLANK ? LOW : HIGH);
-      break;
-    case 3:
-      digitalWrite(PIN_ANODE_1, LOW);
-      digitalWrite(PIN_ANODE_2, LOW);
-      digitalWrite(PIN_ANODE_3, displayVal == BLANK ? LOW : HIGH);
-      break;
-  }
-}
-
-void displayOnTubeExclusive(int tubeIndex, int displayVal) {
-  int anode = TUBE_ANODES[tubeIndex];
-  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
-  
-  setAnode(anode, displayVal);
-  setCathode(!cathodeCtrl0, BLANK);
-  setCathode(cathodeCtrl0, displayVal);
-}
-
-void setButtonLEDs(bool leftOn, bool rightOn) {
-  digitalWrite(PIN_BUTTON_LEFT_LED, leftOn ? HIGH : LOW);
-  digitalWrite(PIN_BUTTON_RIGHT_LED, rightOn ? HIGH : LOW);
 }
 
 /*
@@ -186,7 +108,7 @@ void setButtonLEDs(bool leftOn, bool rightOn) {
  * ===============================
  */
 
-void setMultiplexDisplay(int t0, int t1, int t2, int t3, int t4, int t5) {
+inline void setMultiplexDisplay(byte t0, byte t1, byte t2, byte t3, byte t4, byte t5) {
   multiplexDisplayValues[0] = t0;
   multiplexDisplayValues[1] = t1;
   multiplexDisplayValues[2] = t2;
@@ -195,8 +117,12 @@ void setMultiplexDisplay(int t0, int t1, int t2, int t3, int t4, int t5) {
   multiplexDisplayValues[5] = t5;
 }
 
-void loopMultiplex() {
-  if (micros() - lastDisplayRefreshTimestampUS > MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+inline void loopMultiplex() {
+  if (multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+    displayOnTubeExclusive(lastDisplayRefreshTubeIndex, BLANK);
+    multiplexIsLit = false;
+    lastDisplayRefreshTimestampUS = micros();
+  } else if (!multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US) {
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
@@ -204,11 +130,12 @@ void loopMultiplex() {
     }
 
     displayOnTubeExclusive(lastDisplayRefreshTubeIndex, multiplexDisplayValues[lastDisplayRefreshTubeIndex]);
+    multiplexIsLit = true;
     lastDisplayRefreshTimestampUS = micros();
   }
 }
 
-void handleJackpot(unsigned long loopNow) {
+inline void handleJackpot(unsigned long loopNow) {
   setMultiplexDisplay(
     TUBE_DIGIT_ORDER[jackpotDigitOrderIndexValues[0]],
     TUBE_DIGIT_ORDER[jackpotDigitOrderIndexValues[1]],
@@ -223,7 +150,7 @@ void handleJackpot(unsigned long loopNow) {
     jackpotOn = false;
   } else if (loopNow - lastEventStepTimestampMS > JACKPOT_STEP_DURATION_MS) {
     // advance to next jackpot step
-    for (int i = 0; i < TUBE_COUNT; i++) {
+    for (byte i = 0; i < TUBE_COUNT; i++) {
       if (jackpotDigitOrderIndexValues[i] == 9) {
         jackpotDigitOrderIndexValues[i] = 0;
       } else {
@@ -235,7 +162,7 @@ void handleJackpot(unsigned long loopNow) {
   }
 }
 
-void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, unsigned long loopNow, bool displayElapsed) {
+inline void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, unsigned long loopNow, bool displayElapsed) {
   unsigned long totalMS = displayElapsed ? elapsedMS : remainingMS;
   unsigned long totalSec = totalMS / 1000;
   int hours = totalSec / 3600;
@@ -245,11 +172,11 @@ void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, u
 
   // activate jackpot scroll on every whole minute (excluding when clock starts 
   // and times out), in an effort to preserve tubes / prevent uneven burn
-  if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
+  if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && (displayElapsed || remainingMS > JACKPOT_MIN_REMAINING_MS)) {
     jackpotOn = true;
     lastJackpotTimestampMS = loopNow;
     
-    for (int i = 0; i < TUBE_COUNT; i++) {
+    for (byte i = 0; i < TUBE_COUNT; i++) {
       jackpotDigitOrderIndexValues[i] = 9;
     }
   }
@@ -275,7 +202,7 @@ void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remainingMS, u
   }
 }
 
-CountdownValues loopCountdown(unsigned long loopNow) {
+inline CountdownValues loopCountdown(unsigned long loopNow) {
   unsigned long timeoutLimit = TURN_TIMER_OPTIONS[currentTurnTimerOption].turnLimitMS;
   unsigned long elapsedMS = loopNow - turnStartTimestampMS;
   unsigned long remainingMS = timeoutLimit - elapsedMS;
@@ -285,6 +212,12 @@ CountdownValues loopCountdown(unsigned long loopNow) {
   if (timeoutLimit == 0UL) {
     // special value 0: show elapsed time & never timeout
     setMultiplexClockTime(elapsedMS, remainingMS, loopNow, true);
+    remainingMS = 0UL;
+
+    // reset elapsed to 0 when we can't display any higher numbers
+    if (elapsedMS >= MAX_DISPLAY_ELAPSED_MS) {
+      turnStartTimestampMS = loopNow;
+    }
   } else if (elapsedMS >= timeoutLimit) {
     // countdown expired: change state
     remainingMS = 0UL;
@@ -297,7 +230,7 @@ CountdownValues loopCountdown(unsigned long loopNow) {
   return { elapsedMS, remainingMS };
 }
 
-void loopTimeout(unsigned long loopNow) {
+inline void loopTimeout(unsigned long loopNow) {
   if (loopNow - lastEventStepTimestampMS > TIMEOUT_BLINK_DURATION_MS) {
     lastEventStepTimestampMS = loopNow;
     blinkOn = !blinkOn;
@@ -317,7 +250,7 @@ void loopTimeout(unsigned long loopNow) {
   }
 }
 
-void loopMenu(unsigned long loopNow) {
+inline void loopMenu(unsigned long loopNow) {
   if (loopNow - lastEventStepTimestampMS > MENU_BLINK_DURATION_MS) {
     lastEventStepTimestampMS = loopNow;
     blinkOn = !blinkOn;
@@ -339,14 +272,14 @@ void loopMenu(unsigned long loopNow) {
   }
 }
 
-void loopIdle() {
+inline void loopIdle() {
   setButtonLEDs(false, false);
   setMultiplexDisplay(BLANK, BLANK, BLANK, BLANK, BLANK, BLANK);
 }
 
-void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
+inline void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
   if (loopNow - lastStatusUpdateTimestampMS > STATUS_UPDATE_INTERVAL_MS) {
-    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu", 
+    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu",
       currentClockState,
       TURN_TIMER_OPTIONS[currentTurnTimerOption].label,
       leftPlayersTurn,
@@ -358,7 +291,7 @@ void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsign
   }
 }
 
-void handleRightButtonPress(unsigned long loopNow) {
+inline void handleRightButtonPress(unsigned long loopNow) {
   if (currentClockState == RUNNING && !leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
     turnStartTimestampMS = loopNow;
@@ -377,7 +310,7 @@ void handleRightButtonPress(unsigned long loopNow) {
   }
 }
 
-void handleLeftButtonPress(unsigned long loopNow) {
+inline void handleLeftButtonPress(unsigned long loopNow) {
   if (currentClockState == RUNNING && leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
     turnStartTimestampMS = loopNow;
@@ -396,7 +329,7 @@ void handleLeftButtonPress(unsigned long loopNow) {
   }
 }
 
-void handleUtilityButtonPress(unsigned long loopNow) {
+inline void handleUtilityButtonPress(unsigned long loopNow) {
   if (currentClockState == IDLE) {
     currentClockState = MENU;
   } else if (currentClockState == DEMO || currentClockState == MENU || currentClockState == TIMEOUT || currentClockState == RUNNING) {
@@ -405,10 +338,10 @@ void handleUtilityButtonPress(unsigned long loopNow) {
   }
 }
 
-void loopCheckButtons(unsigned long loopNow) {
-  int rightButtonReading = digitalRead(PIN_BUTTON_RIGHT);
-  int leftButtonReading = digitalRead(PIN_BUTTON_LEFT);
-  int utilityButtonReading = digitalRead(PIN_BUTTON_UTILITY);
+inline void loopCheckButtons(unsigned long loopNow) {
+  byte rightButtonReading = PINC & PIN_BUTTON_RIGHT_DPM_BIT;
+  byte leftButtonReading = PINC & PIN_BUTTON_LEFT_DPM_BIT;
+  byte utilityButtonReading = PINC & PIN_BUTTON_UTILITY_DPM_BIT;
 
   // handle press state change (set debounce timer)
   if (rightButtonReading != rightButtonLastVal) {
