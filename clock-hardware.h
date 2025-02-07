@@ -64,7 +64,7 @@ const byte DIGITS_PER_TUBE = 10;
 const byte TUBE_ANODES[TUBE_COUNT] = {1, 1, 2, 2, 3, 3};
 const bool TUBE_CATHODE_CTRL_0[TUBE_COUNT] = {false, true, false, true, false, true};
 
-// controller values > 9 are unwired, and result in blank display
+// controller values > 9 result in blank display
 const byte BLANK = 15;
 
 // ИH-12A tubes

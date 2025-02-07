@@ -10,7 +10,7 @@
  */
 const long SERIAL_SPEED_BAUD = 115200L;
 const int JACKPOT_STEP_DURATION_MS = 50;
-const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * 3;
+const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * 5;
 const unsigned long JACKPOT_MIN_ELAPSED_MS = 1000UL;
 const unsigned long JACKPOT_MIN_REMAINING_MS = 61000UL;
 const int TIMEOUT_BLINK_DURATION_MS = 500;
@@ -18,6 +18,7 @@ const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
+const unsigned long MAX_DISPLAY_ELAPSED_MS = 359999900UL; // 99:59:59:900
 
 // TODO - test for ideal values on ИH-2 and ИH-12A tubes
 //      - calculate corresponding Hz
@@ -288,8 +289,7 @@ inline void setMultiplexClockTime(unsigned long elapsedMS, unsigned long remaini
 
   // activate jackpot scroll on every whole minute (excluding when clock starts 
   // and times out), in an effort to preserve tubes / prevent uneven burn
-  // if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
-  if ((sec % 10 == 0) && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && remainingMS > JACKPOT_MIN_REMAINING_MS) {
+  if (sec == 0 && jackpotOn == false && elapsedMS > JACKPOT_MIN_ELAPSED_MS && (displayElapsed || remainingMS > JACKPOT_MIN_REMAINING_MS)) {
     jackpotOn = true;
     lastJackpotTimestampMS = loopNow;
     
@@ -329,6 +329,12 @@ inline CountdownValues loopCountdown(unsigned long loopNow) {
   if (timeoutLimit == 0UL) {
     // special value 0: show elapsed time & never timeout
     setMultiplexClockTime(elapsedMS, remainingMS, loopNow, true);
+    remainingMS = 0UL;
+
+    // reset elapsed to 0 when we can't display any higher numbers
+    if (elapsedMS >= MAX_DISPLAY_ELAPSED_MS) {
+      turnStartTimestampMS = loopNow;
+    }
   } else if (elapsedMS >= timeoutLimit) {
     // countdown expired: change state
     remainingMS = 0UL;
