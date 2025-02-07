@@ -20,7 +20,6 @@ const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
-const int MULTIPLEX_HV_STABILIZATION_DELAY_US = 5;
 
 // ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
 // using a 1.4ms (1400µs) per-tube cycle: 1000ms / (1.4ms/tube * 6tubes)
@@ -101,122 +100,6 @@ void setup()
   setButtonLEDs(false, false);
 
   Serial.begin(SERIAL_SPEED_BAUD);
-}
-
-/*
- * ===============================
- *  Internal Functions - Hardware
- * ===============================
- */
-
-inline void displayOnTubeExclusive(byte tubeIndex, byte displayVal) {
-  byte anode = TUBE_ANODES[tubeIndex];
-  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
-  
-  byte c0Val, c1Val;
-
-  // blank the non-active cathode so that the anode for the specified tube
-  // won't light both of the tubes that it's connected to when activated
-  if (cathodeCtrl0) {
-    c0Val = displayVal;
-    c1Val = BLANK;
-  } else {
-    c0Val = BLANK;
-    c1Val = displayVal;
-  }
-
-  // bitmasks to be used when setting PORTB and PORTD hardware registers,
-  // aka Direct Port Manipulation
-  byte portBHighBitmask, portBLowBitmask, portDHighBitmask, portDLowBitmask;
-  portBHighBitmask = portBLowBitmask = portDHighBitmask = portDLowBitmask = 0;
-
-  // Build PORTB low and high bitmasks for digital pins 8-13,
-  // which control the high half of cathode 1 and all 4 anodes
-  if ((c1Val & BIT_2) == 0) {
-    portBLowBitmask |= PIN_CATHODE_1_C_DPM_BIT;
-  } else {
-    portBHighBitmask |= PIN_CATHODE_1_C_DPM_BIT;
-  }
-  if ((c1Val & BIT_3) == 0) {
-    portBLowBitmask |= PIN_CATHODE_1_D_DPM_BIT;
-  } else {
-    portBHighBitmask |= PIN_CATHODE_1_D_DPM_BIT;
-  }
-
-  if (displayVal == BLANK) {
-    portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
-  } else {
-    switch(anode) {
-      case 1:
-        portBLowBitmask |= PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
-        portBHighBitmask |= PIN_ANODE_1_DPM_BIT;
-        break;
-      case 2:
-        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_3_DPM_BIT;
-        portBHighBitmask |= PIN_ANODE_2_DPM_BIT;
-        break;
-      case 3:
-        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT;
-        portBHighBitmask |= PIN_ANODE_3_DPM_BIT;
-        break;
-    } 
-  }
-
-  // Build PORTD bitmasks for digital pins 0-7,
-  // which control cathode 0 and the low half of cathode 1
-  if ((c0Val & BIT_0) == 0) {
-    portDLowBitmask |= PIN_CATHODE_0_A_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_0_A_DPM_BIT;
-  }
-  if ((c0Val & BIT_1) == 0) {
-    portDLowBitmask |= PIN_CATHODE_0_B_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_0_B_DPM_BIT;
-  }
-  if ((c0Val & BIT_2) == 0) {
-    portDLowBitmask |= PIN_CATHODE_0_C_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_0_C_DPM_BIT;
-  }
-  if ((c0Val & BIT_3) == 0) {
-    portDLowBitmask |= PIN_CATHODE_0_D_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_0_D_DPM_BIT;
-  }
-  if ((c1Val & BIT_0) == 0) {
-    portDLowBitmask |= PIN_CATHODE_1_A_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_1_A_DPM_BIT;
-  }
-  if ((c1Val & BIT_1) == 0) {
-    portDLowBitmask |= PIN_CATHODE_1_B_DPM_BIT;
-  } else {
-    portDHighBitmask |= PIN_CATHODE_1_B_DPM_BIT;
-  }
-
-  // LOW mask PORTB first to power OFF Anodes FIRST
-  PORTB &= ~portBLowBitmask;
-  PORTD &= ~portDLowBitmask;
-  delayMicroseconds(MULTIPLEX_HV_STABILIZATION_DELAY_US);
-
-  // HIGH mask PORTD first to power ON Anodes LAST
-  PORTD |= portDHighBitmask;
-  PORTB |= portBHighBitmask;
-}
-
-inline void setButtonLEDs(bool leftOn, bool rightOn) {
-  if (leftOn) {
-    PORTC |= PIN_BUTTON_LEFT_LED_DPM_BIT;
-  } else {
-    PORTC &= ~PIN_BUTTON_LEFT_LED_DPM_BIT;
-  }
-
-  if (rightOn) {
-    PORTC |= PIN_BUTTON_RIGHT_LED_DPM_BIT;
-  } else {
-    PORTC &= ~PIN_BUTTON_RIGHT_LED_DPM_BIT;
-  }
 }
 
 /*

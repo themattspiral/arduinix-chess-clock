@@ -39,9 +39,4 @@ const TurnTimerOption TURN_TIMER_OPTIONS[TURN_TIMER_OPTIONS_COUNT] = {
   { { BLANK, BLANK, BLANK, BLANK, BLANK, 0 }, 0UL, "n0L" }
 };
 
-const byte BIT_0 = 1 << 0;
-const byte BIT_1 = 1 << 1;
-const byte BIT_2 = 1 << 2;
-const byte BIT_3 = 1 << 3;
-
 #endif _CLOCK_DATA_TYPES_H

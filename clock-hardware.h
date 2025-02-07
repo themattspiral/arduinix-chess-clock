@@ -73,4 +73,123 @@ const byte TUBE_DIGIT_ORDER[] = {3, 8, 9, 4, 0, 5, 7, 2, 6, 1};
 // most other tubes
 // const byte TUBE_DIGIT_ORDER[] = {6, 7, 5, 8, 4, 3, 9, 2, 0, 1};
 
+// bit position to BCD input constants
+const byte BIT_0_BCD_PIN_A = 1 << 0;
+const byte BIT_1_BCD_PIN_B = 1 << 1;
+const byte BIT_2_BCD_PIN_C = 1 << 2;
+const byte BIT_3_BCD_PIN_D = 1 << 3;
+
+// high-voltage stabilization delay between anodes off and on
+const int HV_STABILIZATION_DELAY_US = 5;
+
+inline void displayOnTubeExclusive(byte tubeIndex, byte displayVal) {
+  byte anode = TUBE_ANODES[tubeIndex];
+  bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
+  
+  byte c0Val, c1Val;
+
+  // blank the non-active cathode so that the anode for the specified tube
+  // won't light both of the tubes that it's connected to when activated
+  if (cathodeCtrl0) {
+    c0Val = displayVal;
+    c1Val = BLANK;
+  } else {
+    c0Val = BLANK;
+    c1Val = displayVal;
+  }
+
+  // bitmasks to be used when setting PORTB and PORTD hardware registers,
+  // aka Direct Port Manipulation
+  byte portBHighBitmask, portBLowBitmask, portDHighBitmask, portDLowBitmask;
+  portBHighBitmask = portBLowBitmask = portDHighBitmask = portDLowBitmask = 0;
+
+  // Build PORTB low and high bitmasks for digital pins 8-13,
+  // which control the high half of cathode 1 and all 4 anodes
+  if ((c1Val & BIT_2_BCD_PIN_C) == 0) {
+    portBLowBitmask |= PIN_CATHODE_1_C_DPM_BIT;
+  } else {
+    portBHighBitmask |= PIN_CATHODE_1_C_DPM_BIT;
+  }
+  if ((c1Val & BIT_3_BCD_PIN_D) == 0) {
+    portBLowBitmask |= PIN_CATHODE_1_D_DPM_BIT;
+  } else {
+    portBHighBitmask |= PIN_CATHODE_1_D_DPM_BIT;
+  }
+
+  if (displayVal == BLANK) {
+    portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+  } else {
+    switch(anode) {
+      case 1:
+        portBLowBitmask |= PIN_ANODE_2_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_1_DPM_BIT;
+        break;
+      case 2:
+        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_3_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_2_DPM_BIT;
+        break;
+      case 3:
+        portBLowBitmask |= PIN_ANODE_1_DPM_BIT | PIN_ANODE_2_DPM_BIT;
+        portBHighBitmask |= PIN_ANODE_3_DPM_BIT;
+        break;
+    } 
+  }
+
+  // Build PORTD bitmasks for digital pins 0-7,
+  // which control cathode 0 and the low half of cathode 1
+  if ((c0Val & BIT_0_BCD_PIN_A) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_A_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_A_DPM_BIT;
+  }
+  if ((c0Val & BIT_1_BCD_PIN_B) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_B_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_B_DPM_BIT;
+  }
+  if ((c0Val & BIT_2_BCD_PIN_C) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_C_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_C_DPM_BIT;
+  }
+  if ((c0Val & BIT_3_BCD_PIN_D) == 0) {
+    portDLowBitmask |= PIN_CATHODE_0_D_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_0_D_DPM_BIT;
+  }
+  if ((c1Val & BIT_0_BCD_PIN_A) == 0) {
+    portDLowBitmask |= PIN_CATHODE_1_A_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_1_A_DPM_BIT;
+  }
+  if ((c1Val & BIT_1_BCD_PIN_B) == 0) {
+    portDLowBitmask |= PIN_CATHODE_1_B_DPM_BIT;
+  } else {
+    portDHighBitmask |= PIN_CATHODE_1_B_DPM_BIT;
+  }
+
+  // LOW mask PORTB first to power OFF Anodes FIRST
+  PORTB &= ~portBLowBitmask;
+  PORTD &= ~portDLowBitmask;
+  delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
+  // HIGH mask PORTD first to power ON Anodes LAST
+  PORTD |= portDHighBitmask;
+  PORTB |= portBHighBitmask;
+}
+
+inline void setButtonLEDs(bool leftOn, bool rightOn) {
+  if (leftOn) {
+    PORTC |= PIN_BUTTON_LEFT_LED_DPM_BIT;
+  } else {
+    PORTC &= ~PIN_BUTTON_LEFT_LED_DPM_BIT;
+  }
+
+  if (rightOn) {
+    PORTC |= PIN_BUTTON_RIGHT_LED_DPM_BIT;
+  } else {
+    PORTC &= ~PIN_BUTTON_RIGHT_LED_DPM_BIT;
+  }
+}
+
 #endif _CLOCK_HARDWARE_H
