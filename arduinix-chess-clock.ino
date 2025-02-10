@@ -18,10 +18,31 @@ const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
+const int POT_INPUT_CHANGE_WINDOW = 30;
 
-// 300µs - 500µs is recommended. Assuming TUBE_COUNT == 6 this is equivalent to
-// a per-tube refresh rate of 92.5Hz - 55.5Hz. Tested on ИH-2 and ИH-12A tubes.
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 280;  // 100Hz
+// ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
+// 1.8ms ~= 92Hz
+// 2.0ms ~= 83Hz
+// 2.2ms ~= 76Hz
+// 2.4ms ~= 69Hz
+// 2.6mz ~= 64Hz
+// 2.8mz ~= 60Hz
+
+// using a 1.4ms (1400µs) per-tube cycle: 1000ms / (1.4ms/tube * 6tubes)
+// const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1200; // ~86% lit
+// const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 200;  // ~14% off
+
+const int MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MAX_DURATION_US = 2700;
+const int MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MIN_DURATION_US =  100;
+const int MULTIPLEX_SINGLE_TUBE_CYCLE_DURATION_US = 
+  MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MAX_DURATION_US
+  + MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MIN_DURATION_US;
+
+int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 0;
+int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 0;
+
+const int HV_STABILIZATION_DELAY_US = 10;
+
 
 /*
  * ===============================
@@ -36,6 +57,7 @@ int utilityButtonLastVal = HIGH;
 int rightButtonVal = HIGH;
 int leftButtonVal = HIGH;
 int utilityButtonVal = HIGH;
+int potVal = -50;
 unsigned long rightButtonLastDebounceMS = 0UL;
 unsigned long leftButtonLastDebounceMS = 0UL;
 unsigned long utilityButtonLastDebounceMS = 0UL;
@@ -44,6 +66,7 @@ unsigned long utilityButtonLastDebounceMS = 0UL;
 int multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
 int lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
+bool multiplexIsLit = false;
 
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = IDLE;
@@ -54,7 +77,6 @@ unsigned long turnStartTimestampMS = 0UL;
 bool leftPlayersTurn = false;
 bool blinkOn = false;
 bool jackpotOn = false;
-bool jackpotDirectionFTB = true;
 int jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 int currentTurnTimerOption = 2;
@@ -92,7 +114,7 @@ void setup()
   // use analog inputs as digital inputs for buttons
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
   pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
-  pinMode(PIN_BUTTON_UTILITY, INPUT_PULLUP);
+  // pinMode(PIN_BUTTON_UTILITY, INPUT_PULLUP);
 
   // use analog inputs as digital outputs for button LEDs
   pinMode(PIN_BUTTON_RIGHT_LED, OUTPUT);
@@ -103,6 +125,8 @@ void setup()
   // ground for button assembly
   pinMode(PIN_BUTTON_GROUND, OUTPUT);
   digitalWrite(PIN_BUTTON_GROUND, LOW);
+
+  pinMode(PIN_BUTTON_UTILITY, INPUT); // not needed probably
 
   Serial.begin(SERIAL_SPEED_BAUD);
 }
@@ -151,17 +175,29 @@ void setAnode(int anode, int displayVal) {
     case 1:
       digitalWrite(PIN_ANODE_2, LOW);
       digitalWrite(PIN_ANODE_3, LOW);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       digitalWrite(PIN_ANODE_1, displayVal == BLANK ? LOW : HIGH);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       break;
     case 2:
       digitalWrite(PIN_ANODE_1, LOW);
       digitalWrite(PIN_ANODE_3, LOW);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       digitalWrite(PIN_ANODE_2, displayVal == BLANK ? LOW : HIGH);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       break;
     case 3:
       digitalWrite(PIN_ANODE_1, LOW);
       digitalWrite(PIN_ANODE_2, LOW);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       digitalWrite(PIN_ANODE_3, displayVal == BLANK ? LOW : HIGH);
+      delayMicroseconds(HV_STABILIZATION_DELAY_US);
+
       break;
   }
 }
@@ -196,7 +232,13 @@ void setMultiplexDisplay(int t0, int t1, int t2, int t3, int t4, int t5) {
 }
 
 void loopMultiplex() {
-  if (micros() - lastDisplayRefreshTimestampUS > MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+  unsigned long refreshDiffUS = micros() - lastDisplayRefreshTimestampUS;
+
+  if (multiplexIsLit && refreshDiffUS >= MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+    displayOnTubeExclusive(lastDisplayRefreshTubeIndex, BLANK);
+    multiplexIsLit = false;
+    lastDisplayRefreshTimestampUS = micros();
+  } else if (!multiplexIsLit && refreshDiffUS >= MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US) {
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
@@ -204,6 +246,7 @@ void loopMultiplex() {
     }
 
     displayOnTubeExclusive(lastDisplayRefreshTubeIndex, multiplexDisplayValues[lastDisplayRefreshTubeIndex]);
+    multiplexIsLit = true;
     lastDisplayRefreshTimestampUS = micros();
   }
 }
@@ -408,7 +451,7 @@ void handleUtilityButtonPress(unsigned long loopNow) {
 void loopCheckButtons(unsigned long loopNow) {
   int rightButtonReading = digitalRead(PIN_BUTTON_RIGHT);
   int leftButtonReading = digitalRead(PIN_BUTTON_LEFT);
-  int utilityButtonReading = digitalRead(PIN_BUTTON_UTILITY);
+  // int utilityButtonReading = digitalRead(PIN_BUTTON_UTILITY);
 
   // handle press state change (set debounce timer)
   if (rightButtonReading != rightButtonLastVal) {
@@ -417,9 +460,9 @@ void loopCheckButtons(unsigned long loopNow) {
   if (leftButtonReading != leftButtonLastVal) {
     leftButtonLastDebounceMS = loopNow;
   }
-  if (utilityButtonReading != utilityButtonLastVal) {
-    utilityButtonLastDebounceMS = loopNow;
-  }
+  // if (utilityButtonReading != utilityButtonLastVal) {
+  //   utilityButtonLastDebounceMS = loopNow;
+  // }
 
   // check right button debounce time exceeded with un-flickering, changed value
   unsigned long rightDebounceDiff = loopNow - rightButtonLastDebounceMS;
@@ -444,21 +487,38 @@ void loopCheckButtons(unsigned long loopNow) {
   }
 
   // check utility button debounce time exceeded with un-flickering, changed value
-  unsigned long utilityDebounceDiff = loopNow - utilityButtonLastDebounceMS;
-  if (utilityDebounceDiff > BUTTON_DEBOUNCE_DELAY_MS && utilityButtonReading != utilityButtonVal) {
-    utilityButtonVal = utilityButtonReading;
+  // unsigned long utilityDebounceDiff = loopNow - utilityButtonLastDebounceMS;
+  // if (utilityDebounceDiff > BUTTON_DEBOUNCE_DELAY_MS && utilityButtonReading != utilityButtonVal) {
+  //   utilityButtonVal = utilityButtonReading;
 
-    // using internal pull-up resistor means a pressed button goes LOW
-    if (utilityButtonVal == LOW) {
-      handleUtilityButtonPress(loopNow);
-    }
-  }
+  //   // using internal pull-up resistor means a pressed button goes LOW
+  //   if (utilityButtonVal == LOW) {
+  //     handleUtilityButtonPress(loopNow);
+  //   }
+  // }
 
   // store reading as last value to compare to in next loop
   rightButtonLastVal = rightButtonReading;
   leftButtonLastVal = leftButtonReading;
-  utilityButtonLastVal = utilityButtonReading;
+  // utilityButtonLastVal = utilityButtonReading;
 }
+
+void loopCheckPot() {
+  int val = analogRead(PIN_BUTTON_UTILITY);
+
+  if (abs(potVal - val) > POT_INPUT_CHANGE_WINDOW) {
+    potVal = val;
+    
+    MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = map(
+      potVal, 1024, 0,
+      MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MIN_DURATION_US,
+      MULTIPLEX_SINGLE_TUBE_CYCLE_PART_MAX_DURATION_US
+    );
+
+    MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = MULTIPLEX_SINGLE_TUBE_CYCLE_DURATION_US - MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US;
+  }
+}
+
 
 /*
  * ============================
@@ -470,6 +530,8 @@ void loop() {
 
   // check for button presses and change state if needed
   loopCheckButtons(now);
+
+  loopCheckPot();
 
   CountdownValues cv = { 0UL, 0UL };
 
