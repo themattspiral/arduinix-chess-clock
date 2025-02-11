@@ -18,7 +18,7 @@ const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
 const int STATUS_UPDATE_INTERVAL_MS = 1000;
 const int STATUS_UPDATE_MAX_CHARS = 30;
-const int POT_INPUT_CHANGE_WINDOW = 30;
+const int POT_INPUT_CHANGE_WINDOW = 80;
 
 // ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
 // 1.8ms ~= 92Hz
@@ -57,7 +57,7 @@ int utilityButtonLastVal = HIGH;
 int rightButtonVal = HIGH;
 int leftButtonVal = HIGH;
 int utilityButtonVal = HIGH;
-int potVal = -50;
+int potVal = 0;
 unsigned long rightButtonLastDebounceMS = 0UL;
 unsigned long leftButtonLastDebounceMS = 0UL;
 unsigned long utilityButtonLastDebounceMS = 0UL;
@@ -80,6 +80,16 @@ bool jackpotOn = false;
 int jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
 char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 int currentTurnTimerOption = 2;
+
+
+void printTimes() {
+  Serial.print("potVal: ");
+  Serial.print(potVal);
+  Serial.print(" | on us: ");
+  Serial.print(MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US);
+  Serial.print(" | off us: ");
+  Serial.println(MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US);
+}
 
 /*
  * ===============================
@@ -129,6 +139,8 @@ void setup()
   pinMode(PIN_BUTTON_UTILITY, INPUT); // not needed probably
 
   Serial.begin(SERIAL_SPEED_BAUD);
+
+  loopCheckPot(false);
 }
 
 /*
@@ -503,11 +515,18 @@ void loopCheckButtons(unsigned long loopNow) {
   // utilityButtonLastVal = utilityButtonReading;
 }
 
-void loopCheckPot() {
+void loopCheckPot(bool enforceWindow) {
   int val = analogRead(PIN_BUTTON_UTILITY);
 
-  if (abs(potVal - val) > POT_INPUT_CHANGE_WINDOW) {
+  if (!enforceWindow || abs(potVal - val) > POT_INPUT_CHANGE_WINDOW) {
     potVal = val;
+
+    // snap to max or min
+    if (1024 - potVal < POT_INPUT_CHANGE_WINDOW) {
+      potVal = 1024;
+    } else if (potVal < POT_INPUT_CHANGE_WINDOW) {
+      potVal = 0;
+    }
     
     MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = map(
       potVal, 1024, 0,
@@ -516,6 +535,8 @@ void loopCheckPot() {
     );
 
     MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = MULTIPLEX_SINGLE_TUBE_CYCLE_DURATION_US - MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US;
+
+    printTimes();
   }
 }
 
@@ -531,7 +552,7 @@ void loop() {
   // check for button presses and change state if needed
   loopCheckButtons(now);
 
-  loopCheckPot();
+  loopCheckPot(true);
 
   CountdownValues cv = { 0UL, 0UL };
 
