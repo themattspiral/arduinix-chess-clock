@@ -536,7 +536,7 @@ void loopCheckPot(bool enforceWindow) {
 
     MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = MULTIPLEX_SINGLE_TUBE_CYCLE_DURATION_US - MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US;
 
-    printTimes();
+    // printTimes();
   }
 }
 
@@ -573,5 +573,5 @@ void loop() {
   // display current values in multiplexDisplayValues[]
   loopMultiplex();
 
-  loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
+  // loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
 }
