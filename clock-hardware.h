@@ -234,21 +234,30 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
   }
 }
 
+enum NotificationType {
+  NEW_GAME = 0,
+  PLAYER_TURN = 1,
+  TIMEOUT = 2
+};
 
-#define playerString(leftPlayersTurn) (leftPlayersTurn ? "Left" : "Right")
+const char* SERIAL_NOTIFICATION = "CCNTFY,%d,%d,%s";
+
+inline void notify(NotificationType type, bool leftPlayersTurn, const char* label) {
+  char buffer[15] = "";
+  snprintf(buffer, 15, SERIAL_NOTIFICATION, type, leftPlayersTurn, label);
+  Serial.println(buffer);
+}
 
 inline void notifyNewGame(bool leftPlayersTurn, const char* label) {
-  char messageBuffer[100] = "";
-  snprintf(messageBuffer, 100, NEW_GAME_MSG, label, playerString(leftPlayersTurn));
+  notify(NEW_GAME, leftPlayersTurn, label);
 }
 
 inline void notifyPlayerTurn(bool leftPlayersTurn) {
-  //
+  notify(PLAYER_TURN, leftPlayersTurn, "-");
 }
 
 inline void notifyTimeout(bool leftPlayersTurn) {
-  char messageBuffer[100] = "";
-  snprintf(messageBuffer, 100, TIMEOUT_MSG, playerString(leftPlayersTurn));
+  notify(TIMEOUT, leftPlayersTurn, "-");
 }
 
 /*
@@ -460,8 +469,20 @@ inline void setupHardware() {
 
 inline void loopHardware(unsigned long loopNow) {
   #if defined(ARDUINO_AVR_UNO)
-    // loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
+    // this may eventually be something like communication with an RTC chip
+
   #elif defined(ARDUINO_UNOWIFIR4)
+    // TODO: look into changing WiFi.status() to be async in the same way that
+    // Modem.write_nowait() works when called by WiFiClient.write().
+    // ALT: Do this during a blank period at the end of every jackpot. If going
+    // this way, also refactor jackpot decision to be in main loop()
+    // ALT2: maybe try multiplexing a row at once, and sneak this in after a
+    // dead period at the end (it'll probably still blink tho, and a con could
+    // this makes buttons less unresponsive.
+    //
+    // For now, leave this disabled, because it causes a long enough delay to 
+    // trip up multiplexing and to cause pulses and flashes.
+    // 
     // loopCheckWifiConnection();
   #endif
 }

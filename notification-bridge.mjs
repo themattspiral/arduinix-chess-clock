@@ -11,26 +11,6 @@ const TOPIC_RIGHT = process.env.TOPIC_RIGHT;
 const DRY_RUN = process.env.DRY_RUN ? process.env.DRY_RUN.toLowerCase() === 'true' : false;
 const DEBUG = process.env.DEBUG ? process.env.DEBUG.toLowerCase() === 'true' : false;
 
-const CLOCK_STATE = {
-    '0': 'IDLE',
-    '1': 'RUNNING',
-    '2': 'TIMEOUT',
-    '3': 'MENU',
-    '4': 'DEMO'
-};
-
-const TIMER_OPTION_LOW_TIME_THRESHOLD = {
-    '72h': { ms: 14400000, label: '4h' },
-    '48h': { ms: 14400000, label: '4h' },
-    '24h': { ms: 3600000, label: '1h' },
-    '2h': { ms: 300000, label: '5m' },
-    '1h': { ms: 300000, label: '5m' },
-    '30m': { ms: 300000, label: '5m' },
-    '15m': { ms: 120000, label: '2m' },
-    '10m': { ms: 60000, label: '1m' }
-    // no reminders for games with <10m timers
-};
-
 /*
  * Internal Functions
  */
@@ -48,55 +28,14 @@ const notifyBoth = message => {
     notify(TOPIC_RIGHT, message);
 };
 
-const player = leftPlayerTurn => leftPlayerTurn ? 'Left' : 'Right';
-const topic = leftPlayerTurn => leftPlayerTurn ? TOPIC_LEFT : TOPIC_RIGHT;
+const player = leftPlayersTurn => leftPlayersTurn ? 'Left' : 'Right';
+const topic = leftPlayersTurn => leftPlayersTurn ? TOPIC_LEFT : TOPIC_RIGHT;
 
-const notifyNewGame = (leftPlayerTurn, timerOption) => notifyBoth(`New Game Started! Turn Limit: ${timerOption} | Starting Player: ${player(leftPlayerTurn)}`);
-const notifyPlayerTurn = leftPlayerTurn => notify(topic(leftPlayerTurn), 'Your Move!');
-const notifyPlayerTimeLow = (leftPlayerTurn, remainingLabel) => notify(topic(leftPlayerTurn), `Low on time: ${remainingLabel} Remaining!`);
-const notifyTimeout = leftPlayerTurn => notifyBoth(`Game Over! ${player(leftPlayerTurn)} Timed Out`);
+const notifyNewGame = (leftPlayersTurn, timerOption) => notifyBoth(`New Game Started! Turn Limit: ${timerOption} | Starting Player: ${player(leftPlayersTurn)}`);
+const notifyPlayerTurn = leftPlayersTurn => notify(topic(leftPlayersTurn), 'Your Move!');
+const notifyTimeout = leftPlayersTurn => notifyBoth(`Game Over! ${player(leftPlayersTurn)} Timed Out`);
 
 const log = (message, ...rest) => console.log(`${DT_FORMATTER.format(new Date())}: ${message}`, ...rest);
-
-const parseStatusUpdate = message => {
-    const parts = message?.split(',');
-    if (parts.length === 5) {
-        const [state, timerLabel, leftPlayerTurn, elapsedMs, remainingMs] = parts;
-        return {
-            state: CLOCK_STATE[state],
-            timerLabel,
-            leftPlayerTurn: leftPlayerTurn === '1',
-            elapsedMs: Number(elapsedMs),
-            remainingMs: Number(remainingMs)
-        };
-    }
-};
-
-const handleStatusChange = (last, current) => {
-    if (!last) {
-        log('Captured Current State:', current.state);
-    } else if (last.state === 'IDLE' && current.state === 'RUNNING') {
-        log(`New ${current.timerLabel} Game:`, player(current.leftPlayerTurn));
-        notifyNewGame(current.leftPlayerTurn, current.timerLabel);
-    } else if (last.state === 'RUNNING' && current.state === 'TIMEOUT') {
-        log('Timeout - Winner:', player(!current.leftPlayerTurn));
-        notifyTimeout(current.leftPlayerTurn);
-    } else if (last.state === 'RUNNING' && current.state === 'RUNNING') {
-        if (last.leftPlayerTurn !== current.leftPlayerTurn) {
-            log('Turn Change:', player(current.leftPlayerTurn));
-            notifyPlayerTurn(current.leftPlayerTurn);
-        } else if (TIMER_OPTION_LOW_TIME_THRESHOLD[current.timerLabel]
-            && last.remainingMs >= TIMER_OPTION_LOW_TIME_THRESHOLD[current.timerLabel].ms
-            && current.remainingMs < TIMER_OPTION_LOW_TIME_THRESHOLD[current.timerLabel].ms
-        ) {
-            const label = TIMER_OPTION_LOW_TIME_THRESHOLD[current.timerLabel].label;
-            log(`Low Time (${label} remaining):`, player(current.leftPlayerTurn));
-            notifyPlayerTimeLow(current.leftPlayerTurn, label);
-        }
-    } else if (last.state !== current.state) {
-        log(`State Change:`, current.state);
-    }
-};
 
 const listPorts = async () => {
     const Binding = autoDetect();
@@ -121,8 +60,6 @@ console.log(`Arduinix Chess Clock ${process.env.npm_package_version} - Notificat
 const port = new SerialPort({ path: ARDUINO_SERIAL_PORT, baudRate: ARDUINO_SERIAL_PORT_SPEED });
 const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
 
-let lastStatus = null;
-
 port.on('error', async err => {
     log(`Error Opening Arduino Serial Port at ${ARDUINO_SERIAL_PORT} (${ARDUINO_SERIAL_PORT_SPEED} baud):`, err);
     listPorts();
@@ -138,13 +75,24 @@ parser.on('data', data =>{
     if (DEBUG) {
         log('DEBUG:', data);
     }
-    let status = parseStatusUpdate(data);
 
-    if (status) {
-        handleStatusChange(lastStatus, status);
-    } else {
-        log('Error processing status:', data);
+    if (data.startsWith("CCNTFY,")) {
+        const parts = data.split(',');
+        if (parts.length === 4) {
+            const [msgType, notificationType, leftPlayersTurn, timerLabel] = parts;
+            const isLeft = leftPlayersTurn === '1';
+
+            switch (notificationType) {
+                case '0':
+                    notifyNewGame(isLeft, timerLabel);
+                    break;
+                case '1':
+                    notifyPlayerTurn(isLeft);
+                    break;
+                case '2':
+                    notifyTimeout(isLeft);
+                    break;
+            }
+        }
     }
-
-    lastStatus = status;
 });
