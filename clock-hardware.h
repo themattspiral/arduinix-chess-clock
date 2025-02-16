@@ -1,11 +1,26 @@
 /*
- * ============================
- *    Hardware Definitions
- * ============================
+ * ============================================================================
+ * Hardware Definitions
+ * 
+ * Here you will find low-level logic for I/O pin manipulation,
+ * as well as the entry point for all hardware-specific functionality.
+ * This includes:
+ *  - Manipulation of pins to control the Arduinix shield (Nixie tube display)
+ *  - Manipulation of pins to control button LED state
+ *  - Reading state of input buttons and potentiometer
+ *  - WiFi initialization if applicable
+ *  - Notification client logic (loaded with clock-wifi.h, or Serial otherwise)
+ * ============================================================================
  */
 
 #ifndef _CLOCK_HARDWARE_H
 #define _CLOCK_HARDWARE_H
+
+#include "clock-strings.h"
+
+#if defined(ARDUINO_UNOWIFIR4)
+  #include "clock-wifi.h"
+#endif
 
 typedef struct {
   const byte left;
@@ -67,29 +82,14 @@ const byte BIT_1_BCD_PIN_B = 1 << 1;
 const byte BIT_2_BCD_PIN_C = 1 << 2;
 const byte BIT_3_BCD_PIN_D = 1 << 3;
 
-void printHardwareInfo() {
-  #if defined(ARDUINO_UNOWIFIR4)
-    Serial.println("Arduino Uno R4 WiFi (Renesas-based) Detected!");
-  #elif defined(ARDUINO_AVR_UNO)
-    Serial.println("Arduino Uno R1-R3 (AVR-based) Detected!");
-  #endif
-  
-  Serial.println("Pin Hardware Ports:");
-  for (byte pin = 0; pin <= A5; pin++) {
-    uint16_t port = digitalPinToPort(pin);
-    uint16_t mask = digitalPinToBitMask(pin);
-
-    Serial.print(" Pin ");
-    Serial.print(pin);
-    Serial.print(" - Port: ");
-    Serial.print(port);
-    Serial.print(" - Bitmask: ");
-    Serial.println(mask);
-  }
-}
-
-// Arduino Uno R1-R3 (AVR) hardware register port manipulation
+/*
+ * ============================================================================
+ *  Hardware-Specific Code - Arduino Uno R1-R3 - AVR-based 
+ * ============================================================================
+ */
 #if defined(ARDUINO_AVR_UNO)
+
+const long SERIAL_SPEED_BAUD = 115200L;
 
 const byte PIN_CATHODE_0_A_DPM_BIT = 1 << 2;        // pin 2: PORTD bit 2
 const byte PIN_CATHODE_0_B_DPM_BIT = 1 << 3;        // pin 3: PORTD bit 3
@@ -234,8 +234,31 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
   }
 }
 
-// Arduino Uno R4 WiFi (Renesas) hardware register port manipulation
+
+#define playerString(leftPlayersTurn) (leftPlayersTurn ? "Left" : "Right")
+
+inline void notifyNewGame(bool leftPlayersTurn, const char* label) {
+  char messageBuffer[100] = "";
+  snprintf(messageBuffer, 100, NEW_GAME_MSG, label, playerString(leftPlayersTurn));
+}
+
+inline void notifyPlayerTurn(bool leftPlayersTurn) {
+  //
+}
+
+inline void notifyTimeout(bool leftPlayersTurn) {
+  char messageBuffer[100] = "";
+  snprintf(messageBuffer, 100, TIMEOUT_MSG, playerString(leftPlayersTurn));
+}
+
+/*
+ * ============================================================================
+ *  Hardware-Specific Code - Arduino Uno R4 WiFi - Renesas-based 
+ * ============================================================================
+ */
 #elif defined(ARDUINO_UNOWIFIR4)
+
+const long SERIAL_SPEED_BAUD = 2000000L;
 
 const uint16_t PIN_CATHODE_0_A_DPM_BIT = digitalPinToBitMask(2);
 const uint16_t PIN_CATHODE_0_B_DPM_BIT = digitalPinToBitMask(3);
@@ -371,5 +394,76 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
 }
 
 #endif
+
+/*
+ * ============================================================================
+ * Common
+ * ============================================================================
+ */
+inline void setupCommon() {
+  // arduinix tube controller pins
+  pinMode(PIN_ANODE_1, OUTPUT);
+  pinMode(PIN_ANODE_2, OUTPUT);
+  pinMode(PIN_ANODE_3, OUTPUT);
+  pinMode(PIN_ANODE_4, OUTPUT);
+  pinMode(PIN_CATHODE_0_A, OUTPUT);
+  pinMode(PIN_CATHODE_0_B, OUTPUT);
+  pinMode(PIN_CATHODE_0_C, OUTPUT);
+  pinMode(PIN_CATHODE_0_D, OUTPUT);
+  pinMode(PIN_CATHODE_1_A, OUTPUT);
+  pinMode(PIN_CATHODE_1_B, OUTPUT);
+  pinMode(PIN_CATHODE_1_C, OUTPUT);
+  pinMode(PIN_CATHODE_1_D, OUTPUT);
+
+  blankTubes();
+
+  // use analog inputs as digital inputs for buttons
+  pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_UTILITY, INPUT_PULLUP);
+
+  // use analog inputs as digital outputs for button LEDs
+  pinMode(PIN_BUTTON_RIGHT_LED, OUTPUT);
+  pinMode(PIN_BUTTON_LEFT_LED, OUTPUT);
+
+  // ground for button assembly
+  pinMode(PIN_BUTTON_GROUND, OUTPUT);
+  digitalWrite(PIN_BUTTON_GROUND, LOW);
+
+  setButtonLEDs(false, false);
+
+  Serial.begin(SERIAL_SPEED_BAUD);
+}
+
+/*
+ * ============================================================================
+ * Entrypoints to hardware-specific code
+ * ============================================================================
+ */
+inline void setupHardware() {
+  setupCommon();
+
+  #if defined(ARDUINO_AVR_UNO)
+    Serial.println("Arduino Uno R1-R3 (AVR-based) Detected!");
+
+  #elif defined(ARDUINO_UNOWIFIR4)
+    Serial.println("Arduino Uno R4 WiFi (Renesas-based) Detected!");
+    setButtonLEDs(true, true);
+    setupWifi();
+    delay(500);
+    setButtonLEDs(false, false);
+
+  #endif
+
+  Serial.println("Setup complete!");
+}
+
+inline void loopHardware(unsigned long loopNow) {
+  #if defined(ARDUINO_AVR_UNO)
+    // loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
+  #elif defined(ARDUINO_UNOWIFIR4)
+    // loopCheckWifiConnection();
+  #endif
+}
 
 #endif _CLOCK_HARDWARE_H

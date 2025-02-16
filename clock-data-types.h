@@ -9,7 +9,7 @@
 #ifndef _CLOCK_DATA_TYPES_H
 #define _CLOCK_DATA_TYPES_H
 
-enum ClockState { IDLE, RUNNING, TIMEOUT, MENU, DEMO };
+enum ClockState { CLOCK_IDLE, CLOCK_RUNNING, CLOCK_TIMEOUT, CLOCK_MENU };
 
 typedef struct {
   byte displayValues[TUBE_COUNT];
