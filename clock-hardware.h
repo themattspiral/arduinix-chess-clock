@@ -472,7 +472,7 @@ inline void loopHardware(unsigned long loopNow) {
     // this may eventually be something like communication with an RTC chip
 
   #elif defined(ARDUINO_UNOWIFIR4)
-    // wifi reconnecting is handled automatically by the ESP32-C3
+    // wifi reconnecting is handled automatically by the ESP32-S3
 
   #endif
 }
