@@ -472,18 +472,8 @@ inline void loopHardware(unsigned long loopNow) {
     // this may eventually be something like communication with an RTC chip
 
   #elif defined(ARDUINO_UNOWIFIR4)
-    // TODO: look into changing WiFi.status() to be async in the same way that
-    // Modem.write_nowait() works when called by WiFiClient.write().
-    // ALT: Do this during a blank period at the end of every jackpot. If going
-    // this way, also refactor jackpot decision to be in main loop()
-    // ALT2: maybe try multiplexing a row at once, and sneak this in after a
-    // dead period at the end (it'll probably still blink tho, and a con could
-    // this makes buttons less unresponsive.
-    //
-    // For now, leave this disabled, because it causes a long enough delay to 
-    // trip up multiplexing and to cause pulses and flashes.
-    // 
-    // loopCheckWifiConnection();
+    // wifi reconnecting is handled automatically by the ESP32-C3
+
   #endif
 }
 

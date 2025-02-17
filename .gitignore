@@ -2,3 +2,4 @@ node_modules/
 ref/
 .*env
 clock-secrets.h
+clock-secrets.dev.h

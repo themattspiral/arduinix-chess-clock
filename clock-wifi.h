@@ -12,6 +12,7 @@ const char* PASS = SECRET_PASS;
 const char* TOPIC_LEFT = SECRET_TOPIC_LEFT;
 const char* TOPIC_RIGHT = SECRET_TOPIC_RIGHT;
 const char* NTFY_SERVER = "ntfy.sh";
+const int NTFY_SERVER_PORT = 80;
 
 const char* CONN_KEEP_ALIVE = "keep-alive";
 const char* CONN_CLOSE = "close";
@@ -115,84 +116,80 @@ inline bool setupWifi() {
   return wifiConnectionStatus == WL_CONNECTED;
 }
 
-inline bool loopCheckWifiConnection(unsigned long loopNow) {
-  // if (loopNow - lastWifiCheckReconnectTime >= WIFI_CHECK_AND_RECONNECT_FREQUENCY_MS) {
-    Serial.println("Checking WiFi Status...");
-
-    unsigned long before = micros();
-    int currentStatus = WiFi.status();
-    unsigned long diff = micros() - before;
-
-    // lastWifiCheckReconnectTime = loopNow;
-
-    // take action only if status has changed
-    if (wifiConnectionStatus != currentStatus) {
-      if (currentStatus == WL_CONNECTED) {
-        Serial.println("WiFi Connected!");
-        printWifiInfo();
-        printNetworkInfo();
-      } else {
-        Serial.print("WiFi Connection Lost - Current Status: ");
-        Serial.println(statusCodeString(currentStatus));
-
-        Serial.print("Attempting to reconnect to SSID: ");
-        Serial.println(SSID);
-
-        WiFi.begin(SSID, PASS);
-      }
-
-      wifiConnectionStatus = currentStatus;
-    }
-    else {
-      Serial.print("No WiFi status change. Time to check (us): ");
-      Serial.println(diff);
-    }
-
-    return wifiConnectionStatus == WL_CONNECTED;
-  // }
-}
-
 #define playerTopic(leftPlayersTurn) (leftPlayersTurn ? TOPIC_LEFT : TOPIC_RIGHT)
 
+const int MSG_BUFFER_SIZE = 100;
+const int REQ_BUFFER_SIZE = 200;
+
 inline void notifyNewGame(bool leftPlayersTurn, const char* label) {
-  char messageBuffer[100] = "";
-  char reqBuffer1[200] = "";
-  char reqBuffer2[200] = "";
+  if (wifiConnectionStatus != WL_CONNECTED ) {
+    wifiConnectionStatus = WiFi.status();
+    
+    if (wifiConnectionStatus != WL_CONNECTED) {
+      return;
+    }
+  }
 
-  snprintf(messageBuffer, 100, NEW_GAME_MSG, label, playerString(leftPlayersTurn));
-  snprintf(reqBuffer1, 200, NTFY_REQUEST, TOPIC_LEFT, strlen(messageBuffer), CONN_KEEP_ALIVE, messageBuffer);
-  snprintf(reqBuffer2, 200, NTFY_REQUEST, TOPIC_RIGHT, strlen(messageBuffer), CONN_CLOSE, messageBuffer);
+  char msgBuffer[MSG_BUFFER_SIZE] = "";
+  char reqBuffer1[REQ_BUFFER_SIZE] = "";
+  char reqBuffer2[REQ_BUFFER_SIZE] = "";
 
-  if (client.connect(NTFY_SERVER, 80)) {
+  snprintf(msgBuffer, MSG_BUFFER_SIZE, NEW_GAME_MSG, label, playerString(leftPlayersTurn));
+  snprintf(reqBuffer1, REQ_BUFFER_SIZE, NTFY_REQUEST, TOPIC_LEFT, strlen(msgBuffer), CONN_KEEP_ALIVE, msgBuffer);
+  snprintf(reqBuffer2, REQ_BUFFER_SIZE, NTFY_REQUEST, TOPIC_RIGHT, strlen(msgBuffer), CONN_CLOSE, msgBuffer);
+
+  if (client.connect(NTFY_SERVER, NTFY_SERVER_PORT)) {
     client.println(reqBuffer1);
     client.println(reqBuffer2);
     client.stop();
+  } else {
+    wifiConnectionStatus = WiFi.status();
   }
 }
 
 inline void notifyPlayerTurn(bool leftPlayersTurn) {
-  char reqBuffer[150] = "";
-  snprintf(reqBuffer, 150, NTFY_REQUEST, playerTopic(leftPlayersTurn), strlen(TURN_CHANGE_MSG), CONN_CLOSE, TURN_CHANGE_MSG);
+  if (wifiConnectionStatus != WL_CONNECTED ) {
+    wifiConnectionStatus = WiFi.status();
+    
+    if (wifiConnectionStatus != WL_CONNECTED) {
+      return;
+    }
+  }
 
-  if (client.connect(NTFY_SERVER, 80)) {
+  char reqBuffer[REQ_BUFFER_SIZE] = "";
+  snprintf(reqBuffer, REQ_BUFFER_SIZE, NTFY_REQUEST, playerTopic(leftPlayersTurn), strlen(TURN_CHANGE_MSG), CONN_CLOSE, TURN_CHANGE_MSG);
+
+  if (client.connect(NTFY_SERVER, NTFY_SERVER_PORT)) {
     client.println(reqBuffer);
     client.stop();
+  } else {
+    wifiConnectionStatus = WiFi.status();
   }
 }
 
 inline void notifyTimeout(bool leftPlayersTurn) {
-  char messageBuffer[100] = "";
-  char reqBuffer1[200] = "";
-  char reqBuffer2[200] = "";
+  if (wifiConnectionStatus != WL_CONNECTED ) {
+    wifiConnectionStatus = WiFi.status();
+    
+    if (wifiConnectionStatus != WL_CONNECTED) {
+      return;
+    }
+  }
 
-  snprintf(messageBuffer, 100, TIMEOUT_MSG, playerString(leftPlayersTurn));
-  snprintf(reqBuffer1, 200, NTFY_REQUEST, TOPIC_LEFT, strlen(messageBuffer), CONN_KEEP_ALIVE, messageBuffer);
-  snprintf(reqBuffer2, 200, NTFY_REQUEST, TOPIC_RIGHT, strlen(messageBuffer), CONN_CLOSE, messageBuffer);
+  char msgBuffer[MSG_BUFFER_SIZE] = "";
+  char reqBuffer1[REQ_BUFFER_SIZE] = "";
+  char reqBuffer2[REQ_BUFFER_SIZE] = "";
 
-  if (client.connect(NTFY_SERVER, 80)) {
+  snprintf(msgBuffer, MSG_BUFFER_SIZE, TIMEOUT_MSG, playerString(leftPlayersTurn));
+  snprintf(reqBuffer1, REQ_BUFFER_SIZE, NTFY_REQUEST, TOPIC_LEFT, strlen(msgBuffer), CONN_KEEP_ALIVE, msgBuffer);
+  snprintf(reqBuffer2, REQ_BUFFER_SIZE, NTFY_REQUEST, TOPIC_RIGHT, strlen(msgBuffer), CONN_CLOSE, msgBuffer);
+
+  if (client.connect(NTFY_SERVER, NTFY_SERVER_PORT)) {
     client.println(reqBuffer1);
     client.println(reqBuffer2);
     client.stop();
+  } else {
+    wifiConnectionStatus = WiFi.status();
   }
 }
 

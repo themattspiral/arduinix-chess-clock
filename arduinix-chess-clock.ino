@@ -195,9 +195,12 @@ inline CountdownValues loopCountdown(unsigned long loopNow) {
     }
   } else if (elapsedMS >= timeoutLimit) {
     // countdown expired: change state
-    notifyTimeout(leftPlayersTurn);
     remainingMS = 0UL;
     currentClockState = CLOCK_TIMEOUT;
+    
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyTimeout(leftPlayersTurn);
   } else {
     // countdown running: show remaining time
     setMultiplexClockTime(elapsedMS, remainingMS, loopNow, false);
@@ -270,8 +273,11 @@ inline void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs,
 inline void handleRightButtonPress(unsigned long loopNow) {
   if (currentClockState == CLOCK_RUNNING && !leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
-    notifyPlayerTurn(leftPlayersTurn);
     turnStartTimestampMS = loopNow;
+
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyPlayerTurn(leftPlayersTurn);
   } else if (currentClockState == CLOCK_MENU) {
       // loop around if we're already on the largest option
     if (currentTurnTimerOption == TURN_TIMER_OPTIONS_COUNT - 1) {
@@ -281,10 +287,12 @@ inline void handleRightButtonPress(unsigned long loopNow) {
       currentTurnTimerOption++;
     }
   } else if (currentClockState == CLOCK_IDLE) {
-    notifyNewGame(false, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
     leftPlayersTurn = false;
     turnStartTimestampMS = loopNow;
     currentClockState = CLOCK_RUNNING;
+    
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyNewGame(false, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
   } else if (currentClockState == CLOCK_TIMEOUT) {
     currentClockState = CLOCK_IDLE;
   }
@@ -293,8 +301,11 @@ inline void handleRightButtonPress(unsigned long loopNow) {
 inline void handleLeftButtonPress(unsigned long loopNow) {
   if (currentClockState == CLOCK_RUNNING && leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
-    notifyPlayerTurn(leftPlayersTurn);
     turnStartTimestampMS = loopNow;
+    
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyPlayerTurn(leftPlayersTurn);
   } else if (currentClockState == CLOCK_MENU) {
     if (currentTurnTimerOption == 0) {
       // loop around if we're already on the smallest option
@@ -304,10 +315,12 @@ inline void handleLeftButtonPress(unsigned long loopNow) {
       currentTurnTimerOption--;
     }
   } else if (currentClockState == CLOCK_IDLE) {
-    notifyNewGame(true, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
     leftPlayersTurn = true;
     turnStartTimestampMS = loopNow;
     currentClockState = CLOCK_RUNNING;
+
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyNewGame(true, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
   } else if (currentClockState == CLOCK_TIMEOUT) {
     currentClockState = CLOCK_IDLE;
   }
