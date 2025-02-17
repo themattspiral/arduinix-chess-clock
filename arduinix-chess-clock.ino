@@ -8,7 +8,6 @@
  *  Behavior Constants
  * ===============================
  */
-const long SERIAL_SPEED_BAUD = 115200L;
 const int JACKPOT_STEP_DURATION_MS = 50;
 const int JACKPOT_FULL_ROUNDS = 5;
 const int JACKPOT_DURATION_MS = JACKPOT_STEP_DURATION_MS * DIGITS_PER_TUBE * JACKPOT_FULL_ROUNDS;
@@ -57,7 +56,7 @@ unsigned long lastDisplayRefreshTimestampUS = 0UL;
 bool multiplexIsLit = false;
 
 // chess clock state ♟⏲⏲♟
-ClockState currentClockState = IDLE;
+ClockState currentClockState = CLOCK_IDLE;
 unsigned long lastStatusUpdateTimestampMS = 0UL;
 unsigned long lastJackpotTimestampMS = 0UL;
 unsigned long lastEventStepTimestampMS = 0UL;
@@ -74,41 +73,8 @@ byte currentTurnTimerOption = 2;
  *  Initial Setup (Power On)
  * ===============================
  */
-void setup() 
-{
-  pinMode(PIN_ANODE_1, OUTPUT);
-  pinMode(PIN_ANODE_2, OUTPUT);
-  pinMode(PIN_ANODE_3, OUTPUT);
-  pinMode(PIN_ANODE_4, OUTPUT);
-  pinMode(PIN_CATHODE_0_A, OUTPUT);
-  pinMode(PIN_CATHODE_0_B, OUTPUT);
-  pinMode(PIN_CATHODE_0_C, OUTPUT);
-  pinMode(PIN_CATHODE_0_D, OUTPUT);
-  pinMode(PIN_CATHODE_1_A, OUTPUT);
-  pinMode(PIN_CATHODE_1_B, OUTPUT);
-  pinMode(PIN_CATHODE_1_C, OUTPUT);
-  pinMode(PIN_CATHODE_1_D, OUTPUT);
-  
-  blankTubes();
-
-  // use analog inputs as digital inputs for buttons
-  pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
-  pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
-  pinMode(PIN_BUTTON_UTILITY, INPUT_PULLUP);
-
-  // use analog inputs as digital outputs for button LEDs
-  pinMode(PIN_BUTTON_RIGHT_LED, OUTPUT);
-  pinMode(PIN_BUTTON_LEFT_LED, OUTPUT);
-
-  // ground for button assembly
-  pinMode(PIN_BUTTON_GROUND, OUTPUT);
-  digitalWrite(PIN_BUTTON_GROUND, LOW);
-
-  setButtonLEDs(false, false);
-
-  Serial.begin(SERIAL_SPEED_BAUD);
-
-  printHardwareInfo();
+void setup() {
+  setupHardware();
 }
 
 /*
@@ -230,7 +196,11 @@ inline CountdownValues loopCountdown(unsigned long loopNow) {
   } else if (elapsedMS >= timeoutLimit) {
     // countdown expired: change state
     remainingMS = 0UL;
-    currentClockState = TIMEOUT;
+    currentClockState = CLOCK_TIMEOUT;
+    
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyTimeout(leftPlayersTurn);
   } else {
     // countdown running: show remaining time
     setMultiplexClockTime(elapsedMS, remainingMS, loopNow, false);
@@ -301,49 +271,70 @@ inline void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs,
 }
 
 inline void handleRightButtonPress(unsigned long loopNow) {
-  if (currentClockState == RUNNING && !leftPlayersTurn) {
+  if (currentClockState == CLOCK_RUNNING && !leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
     turnStartTimestampMS = loopNow;
-  } else if (currentClockState == MENU) {
+
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyPlayerTurn(leftPlayersTurn);
+  } else if (currentClockState == CLOCK_MENU) {
+      // loop around if we're already on the largest option
     if (currentTurnTimerOption == TURN_TIMER_OPTIONS_COUNT - 1) {
       currentTurnTimerOption = 0;
     } else {
+      // cycle upward to larger timer level
       currentTurnTimerOption++;
     }
-  } else if (currentClockState == IDLE || currentClockState == DEMO) {
+  } else if (currentClockState == CLOCK_IDLE) {
     leftPlayersTurn = false;
     turnStartTimestampMS = loopNow;
-    currentClockState = RUNNING;
-  } else if (currentClockState == TIMEOUT) {
-    currentClockState = IDLE;
+    currentClockState = CLOCK_RUNNING;
+    
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyNewGame(false, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
+  } else if (currentClockState == CLOCK_TIMEOUT) {
+    currentClockState = CLOCK_IDLE;
   }
 }
 
 inline void handleLeftButtonPress(unsigned long loopNow) {
-  if (currentClockState == RUNNING && leftPlayersTurn) {
+  if (currentClockState == CLOCK_RUNNING && leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
     turnStartTimestampMS = loopNow;
-  } else if (currentClockState == MENU) {
+    
+    blankTubes();
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyPlayerTurn(leftPlayersTurn);
+  } else if (currentClockState == CLOCK_MENU) {
     if (currentTurnTimerOption == 0) {
+      // loop around if we're already on the smallest option
       currentTurnTimerOption = TURN_TIMER_OPTIONS_COUNT - 1;
     } else {
+      // cycle downward to smaller timer level
       currentTurnTimerOption--;
     }
-  } else if (currentClockState == IDLE || currentClockState == DEMO) {
+  } else if (currentClockState == CLOCK_IDLE) {
     leftPlayersTurn = true;
     turnStartTimestampMS = loopNow;
-    currentClockState = RUNNING;
-  } else if (currentClockState == TIMEOUT) {
-    currentClockState = IDLE;
+    currentClockState = CLOCK_RUNNING;
+
+    setButtonLEDs(leftPlayersTurn, !leftPlayersTurn);
+    notifyNewGame(true, TURN_TIMER_OPTIONS[currentTurnTimerOption].label);
+  } else if (currentClockState == CLOCK_TIMEOUT) {
+    currentClockState = CLOCK_IDLE;
   }
 }
 
 inline void handleUtilityButtonPress(unsigned long loopNow) {
-  if (currentClockState == IDLE) {
-    currentClockState = MENU;
-  } else if (currentClockState == DEMO || currentClockState == MENU || currentClockState == TIMEOUT || currentClockState == RUNNING) {
-    currentClockState = IDLE;
-    turnStartTimestampMS = 0;
+  if (currentClockState == CLOCK_IDLE) {
+    currentClockState = CLOCK_MENU;
+  } else if (
+    currentClockState == CLOCK_MENU
+    || currentClockState == CLOCK_TIMEOUT
+    || currentClockState == CLOCK_RUNNING
+  ) {
+    currentClockState = CLOCK_IDLE;
   }
 }
 
@@ -413,24 +404,23 @@ void loop() {
   
   CountdownValues cv = { 0UL, 0UL };
 
-  // update values to display in multiplexDisplayValues[] based on current clock state
-  if (currentClockState == RUNNING) {
+  // handle behavior based on current clock state. generally, update the
+  // tube display by making changes to multiplexDisplayValues[], and 
+  // occasionally change to other states (e.g. loopCountdown() will change
+  // `currentClockState` to CLOCK_TIMEOUT when appropriate)
+  if (currentClockState == CLOCK_RUNNING) {
     cv = loopCountdown(now);
-  } else if (currentClockState == TIMEOUT) {
+  } else if (currentClockState == CLOCK_TIMEOUT) {
     cv = { TURN_TIMER_OPTIONS[currentTurnTimerOption].turnLimitMS, 0UL };
     loopTimeout(now);
-  } else if (currentClockState == MENU) {
+  } else if (currentClockState == CLOCK_MENU) {
     loopMenu(now);
-  } else if (currentClockState == DEMO) {
-    // loopDemoCount(now);
-  } else if (currentClockState == IDLE) {
+  } else if (currentClockState == CLOCK_IDLE) {
     loopIdle();
   }
 
   // display current values in multiplexDisplayValues[]
   loopMultiplex();
 
-  #if defined(ARDUINO_AVR_UNO)
-    loopSendStatusUpdate(now, cv.elapsedMS, cv.remainingMS);
-  #endif
+  loopHardware(now);
 }
