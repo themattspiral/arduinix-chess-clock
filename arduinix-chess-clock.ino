@@ -2,6 +2,7 @@
 
 #include "clock-hardware.h"
 #include "clock-data-types.h"
+#include "multimap.h"
 
 /*
  * ===============================
@@ -17,20 +18,15 @@ const unsigned long MAX_DISPLAY_ELAPSED_MS = 359999900UL; // 99:59:59:900
 const int TIMEOUT_BLINK_DURATION_MS = 500;
 const int MENU_BLINK_DURATION_MS = 300;
 const int BUTTON_DEBOUNCE_DELAY_MS = 20;
-const int STATUS_UPDATE_INTERVAL_MS = 1000;
-const int STATUS_UPDATE_MAX_CHARS = 30;
+const int POT_INPUT_CHECK_FREQUENCY_MS = 50;
+const int POT_INPUT_CHANGE_THRESHOLD = 10;
 
 // ~120Hz / tube - tested on ИH-2 and ИH-12A tubes
 // Given Xms per-tube cycle, 1000ms / (Xms/tube * 6tubes) = Hz
-// 1.4ms ~= 120Hz
-// 2.8mz ~= 60Hz
-
-// const long MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 750000L;
-// const long MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US = 500000L;
-// const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 2700;
-// const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US =  100;
-const int MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US = 1300;
-const int MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US =  100;
+// 1.4ms (1400μs) ~= 120Hz, and 2.8ms (2800μs) ~= 60Hz
+const int MULTIPLEX_SINGLE_TUBE_CYCLE_US = 1400;
+const int MULTIPLEX_SINGLE_TUBE_LIT_MIN_US = 0;
+const int MULTIPLEX_SINGLE_TUBE_LIT_MAX_US = 1350;
 
 /*
  * ===============================
@@ -48,12 +44,16 @@ byte utilityButtonVal = HIGH;
 unsigned long rightButtonLastDebounceMS = 0UL;
 unsigned long leftButtonLastDebounceMS = 0UL;
 unsigned long utilityButtonLastDebounceMS = 0UL;
+unsigned long potLastCheckMS = 0UL;
+int potVal = 0;
 
 // nixie tube state 🚥🚥
 byte multiplexDisplayValues[TUBE_COUNT] = {BLANK, BLANK, BLANK, BLANK, BLANK, BLANK};
 byte lastDisplayRefreshTubeIndex = TUBE_COUNT;
 unsigned long lastDisplayRefreshTimestampUS = 0UL;
 bool multiplexIsLit = false;
+int multiplexSingleTubeLitUS = MULTIPLEX_SINGLE_TUBE_LIT_MAX_US;
+int multiplexSingleTubeOffUS = MULTIPLEX_SINGLE_TUBE_CYCLE_US - multiplexSingleTubeLitUS;
 
 // chess clock state ♟⏲⏲♟
 ClockState currentClockState = CLOCK_IDLE;
@@ -65,17 +65,7 @@ bool leftPlayersTurn = false;
 bool blinkOn = false;
 bool jackpotOn = false;
 byte jackpotDigitOrderIndexValues[TUBE_COUNT] = {0, 0, 0, 0, 0, 0};
-char statusUpdate[STATUS_UPDATE_MAX_CHARS] = "";
 byte currentTurnTimerOption = 2;
-
-/*
- * ===============================
- *  Initial Setup (Power On)
- * ===============================
- */
-void setup() {
-  setupHardware();
-}
 
 /*
  * ===============================
@@ -93,11 +83,11 @@ inline void setMultiplexDisplay(byte t0, byte t1, byte t2, byte t3, byte t4, byt
 }
 
 inline void loopMultiplex() {
-  if (multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_LIT_DURATION_US) {
+  if (multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= multiplexSingleTubeLitUS) {
     blankTubes();
     multiplexIsLit = false;
     lastDisplayRefreshTimestampUS = micros();
-  } else if (!multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= MULTIPLEX_SINGLE_TUBE_OFF_DURATION_US) {
+  } else if (!multiplexIsLit && micros() - lastDisplayRefreshTimestampUS >= multiplexSingleTubeOffUS) {
     if (lastDisplayRefreshTubeIndex == 0) {
       lastDisplayRefreshTubeIndex = TUBE_COUNT - 1;
     } else {
@@ -256,20 +246,6 @@ inline void loopIdle() {
   setMultiplexDisplay(BLANK, BLANK, BLANK, BLANK, BLANK, BLANK);
 }
 
-inline void loopSendStatusUpdate(unsigned long loopNow, unsigned long elapsedMs, unsigned long remainingMs) {
-  if (loopNow - lastStatusUpdateTimestampMS > STATUS_UPDATE_INTERVAL_MS) {
-    snprintf(statusUpdate, STATUS_UPDATE_MAX_CHARS, "%d,%s,%d,%lu,%lu",
-      currentClockState,
-      TURN_TIMER_OPTIONS[currentTurnTimerOption].label,
-      leftPlayersTurn,
-      elapsedMs,
-      remainingMs
-    );
-    Serial.println(statusUpdate);
-    lastStatusUpdateTimestampMS = millis();
-  }
-}
-
 inline void handleRightButtonPress(unsigned long loopNow) {
   if (currentClockState == CLOCK_RUNNING && !leftPlayersTurn) {
     leftPlayersTurn = !leftPlayersTurn;
@@ -391,6 +367,57 @@ inline void loopCheckButtons(unsigned long loopNow) {
   utilityButtonLastVal = vals.utility;
 }
 
+// TODO - Move to clock-hardware
+const int POT_MAX = 1023;
+int LOG_IN_MAP[] = {0,3,9,16,30,48,71,93,126,170,220,300,390,480,580,680,780,880,1015};
+int OUT_MAP[] = {0,75,150,225,300,375,450,525,600,675,750,825,900,975,1050,1125,1200,1275,1350};
+const int MAP_SIZE = 19;
+
+void loopCheckPotentiometer(unsigned long loopNow, bool enforceMinimumChange) {
+  if (loopNow - potLastCheckMS < POT_INPUT_CHECK_FREQUENCY_MS) {
+    return;
+  }
+
+  int val = analogRead(PIN_POTENTIOMETER);
+  potLastCheckMS = loopNow;
+
+  if (!enforceMinimumChange || abs(potVal - val) > POT_INPUT_CHANGE_THRESHOLD) {
+    potVal = val;
+
+    // linear map
+    // multiplexSingleTubeLitUS = map(
+    //   potVal,
+    //   0, POT_MAX,
+    //   MULTIPLEX_SINGLE_TUBE_LIT_MIN_US,
+    //   MULTIPLEX_SINGLE_TUBE_LIT_MAX_US
+    // );
+
+    // use multiple segments to account for log pot hardware (volume control)
+    // TODO: use a linear pot instead
+    multiplexSingleTubeLitUS = multiMapBS<int>(potVal, LOG_IN_MAP, OUT_MAP, MAP_SIZE);
+    multiplexSingleTubeOffUS = MULTIPLEX_SINGLE_TUBE_CYCLE_US - multiplexSingleTubeLitUS;
+
+    Serial.print("pot: ");
+    Serial.print(potVal);
+    Serial.print(" | on: ");
+    Serial.print(multiplexSingleTubeLitUS);
+    Serial.print(" | off: ");
+    Serial.println(multiplexSingleTubeOffUS);
+  }
+}
+
+/*
+ * ===============================
+ *  Initial Setup (Power On)
+ * ===============================
+ */
+void setup() {
+  setupHardware();
+
+  // initial read doesn't enfore the minimum change
+  loopCheckPotentiometer(POT_INPUT_CHECK_FREQUENCY_MS, false);
+}
+
 /*
  * ============================
  *  Main Loop (Continuous)
@@ -401,6 +428,8 @@ void loop() {
 
   // check for button presses and change state if needed
   loopCheckButtons(now);
+
+  loopCheckPotentiometer(now, true);
   
   CountdownValues cv = { 0UL, 0UL };
 

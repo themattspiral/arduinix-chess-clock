@@ -19,7 +19,15 @@ const char* CONN_CLOSE = "close";
 const char* NTFY_REQUEST = "POST /%s HTTP/1.1\nHost: ntfy.sh\nContent-Type: text/plain\nContent-Length: %d\nConnection: %s\n\n%s\n";
 
 int wifiConnectionStatus = WL_IDLE_STATUS;
+
+// better characterized as a TCP client
 WiFiClient client;
+
+/*
+ * ============================================================================
+ *  Util Functions
+ * ============================================================================
+ */
 
 inline void printMacAddress(byte mac[]) {
   for (int i = 0; i < 6; i++) {
@@ -77,6 +85,14 @@ inline const char* statusCodeString(int status) {
   }
 }
 
+/*
+ * ============================================================================
+ * Setup
+ * 
+ * Connect to WPA WiFi network as defined in clock-secrets, 
+ * ============================================================================
+ */
+
 inline bool setupWifi() {
   wifiConnectionStatus = WiFi.status();
 
@@ -102,8 +118,15 @@ inline bool setupWifi() {
 
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(SSID);
+
   wifiConnectionStatus = WiFi.begin(SSID, PASS);
 
+  // After WiFi.begin(), reconnect attemps are handled automatically by 
+  // the ESP32-S3. This includes after initial failure (tries until it works),
+  // or if it disconnects after initially working. 
+  //
+  // Here, just log the initial connection status (check status again later
+  // before attempting to send a notification if initially not connected)
   if (wifiConnectionStatus == WL_CONNECTED) {
     Serial.println("WiFi Connected!");
     printWifiInfo();
@@ -116,12 +139,32 @@ inline bool setupWifi() {
   return wifiConnectionStatus == WL_CONNECTED;
 }
 
+/*
+ * ============================================================================
+ * WiFi Notifications
+ * 
+ * Using WiFiClient (a TCP client), connect to ntfy.sh server to send HTTP
+ * POST messages for notification events (disconnect when finished without)
+ * checking on the response).
+ * 
+ * void notifyNewGame(bool leftPlayersTurn, const char* label)
+ * void notifyPlayerTurn(bool leftPlayersTurn)
+ * void notifyTimeout(bool leftPlayersTurn)
+ * ============================================================================
+ */
+
 #define playerTopic(leftPlayersTurn) (leftPlayersTurn ? TOPIC_LEFT : TOPIC_RIGHT)
 
 const int MSG_BUFFER_SIZE = 100;
 const int REQ_BUFFER_SIZE = 200;
 
 inline void notifyNewGame(bool leftPlayersTurn, const char* label) {
+  // If WiFi was not previously connected, re-check status to be sure.
+  //  - If WiFi is still not connected, exit quickly without trying a 
+  //    connection to ntfy.sh, so a lengthy (10s) timeout is avoided
+  //  - If WiFi is now actually connected, try sending notification
+  // 
+  // Note: WiFi reconnecting is handled automatically by the ESP32-S3
   if (wifiConnectionStatus != WL_CONNECTED ) {
     wifiConnectionStatus = WiFi.status();
     
@@ -143,11 +186,19 @@ inline void notifyNewGame(bool leftPlayersTurn, const char* label) {
     client.println(reqBuffer2);
     client.stop();
   } else {
+    // if connection to ntfy.sh failed (e.g. timed out), it's most likely that
+    // WiFi disconnected: update WiFi status to avoid timeouts while it's down
     wifiConnectionStatus = WiFi.status();
   }
 }
 
 inline void notifyPlayerTurn(bool leftPlayersTurn) {
+  // If WiFi was not previously connected, re-check status to be sure.
+  //  - If WiFi is still not connected, exit quickly without trying a 
+  //    connection to ntfy.sh, so a lengthy (10s) timeout is avoided
+  //  - If WiFi is now actually connected, try sending notification
+  // 
+  // Note: WiFi reconnecting is handled automatically by the ESP32-S3
   if (wifiConnectionStatus != WL_CONNECTED ) {
     wifiConnectionStatus = WiFi.status();
     
@@ -163,11 +214,19 @@ inline void notifyPlayerTurn(bool leftPlayersTurn) {
     client.println(reqBuffer);
     client.stop();
   } else {
+    // if connection to ntfy.sh failed (e.g. timed out), it's most likely that
+    // WiFi disconnected: update WiFi status to avoid timeouts while it's down
     wifiConnectionStatus = WiFi.status();
   }
 }
 
 inline void notifyTimeout(bool leftPlayersTurn) {
+  // If WiFi was not previously connected, re-check status to be sure.
+  //  - If WiFi is still not connected, exit quickly without trying a 
+  //    connection to ntfy.sh, so a lengthy (10s) timeout is avoided
+  //  - If WiFi is now actually connected, try sending notification
+  // 
+  // Note: WiFi reconnecting is handled automatically by the ESP32-S3
   if (wifiConnectionStatus != WL_CONNECTED ) {
     wifiConnectionStatus = WiFi.status();
     
@@ -189,6 +248,8 @@ inline void notifyTimeout(bool leftPlayersTurn) {
     client.println(reqBuffer2);
     client.stop();
   } else {
+    // if connection to ntfy.sh failed (e.g. timed out), it's most likely that
+    // WiFi disconnected: update WiFi status to avoid timeouts while it's down
     wifiConnectionStatus = WiFi.status();
   }
 }

@@ -52,7 +52,7 @@ const byte PIN_BUTTON_LEFT = A1;
 const byte PIN_BUTTON_RIGHT_LED = A2;
 const byte PIN_BUTTON_LEFT_LED = A3;
 const byte PIN_BUTTON_UTILITY = A4;
-const byte PIN_BUTTON_GROUND = A5;
+const byte PIN_POTENTIOMETER = A5;
 
 // The clock is designed to use 6 tubes, each one wired to a unique combination
 // of an anode pin (live power) and a cathode controller chip К155ИД1 (ground).
@@ -84,7 +84,17 @@ const byte BIT_3_BCD_PIN_D = 1 << 3;
 
 /*
  * ============================================================================
- *  Hardware-Specific Code - Arduino Uno R1-R3 - AVR-based 
+ *  Hardware-Specific Code - Arduino Uno R1-R3 - AVR-based
+ *
+ * ButtonValues readButtonValues()
+ * void setButtonLEDs(bool leftOn, bool rightOn)
+ * void blankTubes()
+ * void displayOnTube(byte tubeIndex, byte displayVal)
+ *
+ * Also provides Serial implementations of notification functions:
+ * void notifyNewGame(bool leftPlayersTurn, const char* label)
+ * void notifyPlayerTurn(bool leftPlayersTurn)
+ * void notifyTimeout(bool leftPlayersTurn)
  * ============================================================================
  */
 #if defined(ARDUINO_AVR_UNO)
@@ -108,7 +118,7 @@ const byte PIN_BUTTON_LEFT_DPM_BIT = 1 << 1;        // pin A1 (15): PORTC bit 1
 const byte PIN_BUTTON_RIGHT_LED_DPM_BIT = 1 << 2;   // pin A2 (16): PORTC bit 2
 const byte PIN_BUTTON_LEFT_LED_DPM_BIT = 1 << 3;    // pin A3 (17): PORTC bit 3
 const byte PIN_BUTTON_UTILITY_DPM_BIT = 1 << 4;     // pin A4 (18): PORTC bit 4
-const byte PIN_BUTTON_GROUND_DPM_BIT = 1 << 5;      // pin A5 (19): PORTC bit 5
+const byte PIN_POTENTIOMETER_DPM_BIT = 1 << 5;      // pin A5 (19): PORTC bit 5
 
 inline ButtonValues readButtonValues() {
   return {
@@ -164,12 +174,16 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
   byte portBHighBitmask, portBLowBitmask, portDHighBitmask, portDLowBitmask;
   portBHighBitmask = portBLowBitmask = portDHighBitmask = portDLowBitmask = 0;
   
+  // translate displayVal into individual bits for cathode controller input
   byte cathodeA = displayVal & BIT_0_BCD_PIN_A;
   byte cathodeB = displayVal & BIT_1_BCD_PIN_B;
   byte cathodeC = displayVal & BIT_2_BCD_PIN_C;
   byte cathodeD = displayVal & BIT_3_BCD_PIN_D;
 
   if (cathodeCtrl0) {
+    // build cathode 0 high and low inputs using pin bitmasks
+    // **ASSUME** cathode 1 stays blank (all high inputs) because we alternate 
+    // between displayOnTube() and blankTubes()
     if (cathodeA) {
       portDHighBitmask |= PIN_CATHODE_0_A_DPM_BIT;
     } else {
@@ -191,6 +205,9 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
       portDLowBitmask |= PIN_CATHODE_0_D_DPM_BIT;
     }
   } else {
+    // build cathode 1 high and low inputs using pin bitmasks
+    // **ASSUME** cathode 0 stays blank (all high inputs) because we alternate 
+    // between displayOnTube() and blankTubes()
     if (cathodeA) {
       portDHighBitmask |= PIN_CATHODE_1_A_DPM_BIT;
     } else {
@@ -213,11 +230,15 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
     }
   }
 
+  // set low cathode input values
   PORTB &= ~portBLowBitmask;
   PORTD &= ~portDLowBitmask;
+
+  // set high cathode input values
   PORTB |= portBHighBitmask;
   PORTD |= portDHighBitmask;
 
+  // ensure cathode ground is fully in place before switching anode on
   delayMicroseconds(HV_STABILIZATION_DELAY_US);
 
   // set high anode pin
@@ -262,7 +283,14 @@ inline void notifyTimeout(bool leftPlayersTurn) {
 
 /*
  * ============================================================================
- *  Hardware-Specific Code - Arduino Uno R4 WiFi - Renesas-based 
+ * Hardware-Specific Code - Arduino Uno R4 WiFi - Renesas-based 
+ * 
+ * ButtonValues readButtonValues()
+ * void setButtonLEDs(bool leftOn, bool rightOn)
+ * void blankTubes()
+ * void displayOnTube(byte tubeIndex, byte displayVal)
+ *
+ * WiFi versions of notifyNewGame(), etc come from clock-wifi.h
  * ============================================================================
  */
 #elif defined(ARDUINO_UNOWIFIR4)
@@ -286,7 +314,7 @@ const uint16_t PIN_BUTTON_LEFT_DPM_BIT = digitalPinToBitMask(A1);
 const uint16_t PIN_BUTTON_RIGHT_LED_DPM_BIT = digitalPinToBitMask(A2);
 const uint16_t PIN_BUTTON_LEFT_LED_DPM_BIT = digitalPinToBitMask(A3);
 const uint16_t PIN_BUTTON_UTILITY_DPM_BIT = digitalPinToBitMask(A4);
-const uint16_t PIN_BUTTON_GROUND_DPM_BIT = digitalPinToBitMask(A5);
+const uint16_t PIN_BUTTON_POTENTIOMETER_DPM_BIT = digitalPinToBitMask(A5);
 
 inline ButtonValues readButtonValues() {
   return {
@@ -337,12 +365,16 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
   byte anode = TUBE_ANODES[tubeIndex];
   bool cathodeCtrl0 = TUBE_CATHODE_CTRL_0[tubeIndex];
 
+  // translate displayVal into individual bits for cathode controller input
   byte cathodeA = displayVal & BIT_0_BCD_PIN_A;
   byte cathodeB = displayVal & BIT_1_BCD_PIN_B;
   byte cathodeC = displayVal & BIT_2_BCD_PIN_C;
   byte cathodeD = displayVal & BIT_3_BCD_PIN_D;
   
   if (cathodeCtrl0) {
+    // switch each cathode 0 input high (POSR) or low (PORR) using pin bitmask
+    // **ASSUME** cathode 1 stays blank (all high inputs) because we alternate 
+    // between displayOnTube() and blankTubes()
     if (cathodeA) {
       R_PORT1->POSR = PIN_CATHODE_0_A_DPM_BIT;
     } else {
@@ -364,6 +396,9 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
       R_PORT1->PORR = PIN_CATHODE_0_D_DPM_BIT;
     }
   } else {
+    // switch each cathode 1 input high (POSR) or low (PORR) using pin bitmask
+    // **ASSUME** cathode 0 stays blank (all high inputs) because we alternate 
+    // between displayOnTube() and blankTubes()
     if (cathodeA) {
       R_PORT1->POSR = PIN_CATHODE_1_A_DPM_BIT;
     } else {
@@ -386,6 +421,7 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
     }
   }
 
+  // ensure cathode ground is fully in place before switching anode on
   delayMicroseconds(HV_STABILIZATION_DELAY_US);
 
   // set high anode pin
@@ -406,10 +442,16 @@ inline void displayOnTube(byte tubeIndex, byte displayVal) {
 
 /*
  * ============================================================================
- * Common
+ * Common Hardware Code
+ * 
+ * Assume this is the same across all platforms.
  * ============================================================================
  */
+
+// always be called when setupHardware() is called
 inline void setupCommon() {
+  Serial.begin(SERIAL_SPEED_BAUD);
+
   // arduinix tube controller pins
   pinMode(PIN_ANODE_1, OUTPUT);
   pinMode(PIN_ANODE_2, OUTPUT);
@@ -424,6 +466,7 @@ inline void setupCommon() {
   pinMode(PIN_CATHODE_1_C, OUTPUT);
   pinMode(PIN_CATHODE_1_D, OUTPUT);
 
+  // explicitly ensure all anodes and cathodes are off to start
   blankTubes();
 
   // use analog inputs as digital inputs for buttons
@@ -435,18 +478,15 @@ inline void setupCommon() {
   pinMode(PIN_BUTTON_RIGHT_LED, OUTPUT);
   pinMode(PIN_BUTTON_LEFT_LED, OUTPUT);
 
-  // ground for button assembly
-  pinMode(PIN_BUTTON_GROUND, OUTPUT);
-  digitalWrite(PIN_BUTTON_GROUND, LOW);
+  // analog input
+  pinMode(PIN_POTENTIOMETER, INPUT);
 
   setButtonLEDs(false, false);
-
-  Serial.begin(SERIAL_SPEED_BAUD);
 }
 
 /*
  * ============================================================================
- * Entrypoints to hardware-specific code
+ * Entrypoints to hardware-specific code called from setup() and loop()
  * ============================================================================
  */
 inline void setupHardware() {
